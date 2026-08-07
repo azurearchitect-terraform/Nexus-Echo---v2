@@ -160,7 +160,7 @@ export class Engine {
     try {
       return await Promise.race([
         this.rag.search(query, 4),
-        new Promise<RagHit[]>((resolve) => setTimeout(() => resolve([]), 120)),
+        new Promise<RagHit[]>((resolve) => setTimeout(() => resolve([]), 2000)),
       ]);
     } catch {
       return [];

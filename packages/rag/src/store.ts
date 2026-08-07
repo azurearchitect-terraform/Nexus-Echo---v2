@@ -51,6 +51,18 @@ export class RagStore {
     return this.chunks.length;
   }
 
+  listDocuments(): { id: string; title: string; chunks: number }[] {
+    const map = new Map<string, { id: string; title: string; chunks: number }>();
+    for (const chunk of this.chunks) {
+      if (!map.has(chunk.docId)) {
+        map.set(chunk.docId, { id: chunk.docId, title: chunk.title, chunks: 1 });
+      } else {
+        map.get(chunk.docId)!.chunks++;
+      }
+    }
+    return Array.from(map.values());
+  }
+
   async addDocument(
     docId: string,
     title: string,

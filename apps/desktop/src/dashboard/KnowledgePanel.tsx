@@ -1,9 +1,13 @@
 import { useEffect, useState } from "react";
 import { open } from "@tauri-apps/plugin-dialog";
-import { readTextFile } from "@tauri-apps/plugin-fs";
+import { readFile, readTextFile } from "@tauri-apps/plugin-fs";
 import { FileText, Loader2, Plus, Trash2 } from "lucide-react";
 import { engine } from "@/lib/engine";
 import { uid } from "@nexus/core";
+import * as pdfjsLib from "pdfjs-dist";
+
+// Use CDN for worker to avoid complex bundler configurations with Vite + Tauri
+pdfjsLib.GlobalWorkerOptions.workerSrc = `https://cdnjs.cloudflare.com/ajax/libs/pdf.js/${pdfjsLib.version}/pdf.worker.min.mjs`;
 
 interface DocRow {
   id: string;
@@ -18,23 +22,56 @@ export function KnowledgePanel() {
 
   useEffect(() => {
     if (!engine.rag) return;
-    setDocs((current) => current);
+    setDocs(engine.rag.listDocuments());
   }, []);
 
   const addFiles = async () => {
     const selected = await open({
       multiple: true,
-      filters: [{ name: "Documents", extensions: ["txt", "md", "markdown", "json", "csv", "log"] }],
+      filters: [{ name: "Documents", extensions: ["txt", "md", "markdown", "json", "csv", "log", "pdf"] }],
     });
     if (!selected) return;
     const paths = Array.isArray(selected) ? selected : [selected];
 
     for (const path of paths) {
       const title = path.split(/[/\\]/).pop() ?? path;
+      const ext = title.split('.').pop()?.toLowerCase();
       setBusy(title);
       setProgress(0);
       try {
-        const text = await readTextFile(path);
+        let text = "";
+
+        if (ext === "pdf") {
+          const bytes = await readFile(path);
+          const pdf = await pdfjsLib.getDocument({ data: bytes }).promise;
+          const pages = [];
+          for (let i = 1; i <= pdf.numPages; i++) {
+            const page = await pdf.getPage(i);
+            const content = await page.getTextContent();
+            // eslint-disable-next-line @typescript-eslint/no-explicit-any
+            const pageText = content.items.map((item: any) => item.str).join(" ");
+            pages.push(pageText);
+          }
+          text = pages.join("\n\n");
+        } else if (ext === "json") {
+          const raw = await readTextFile(path);
+          try {
+            const parsed = JSON.parse(raw);
+            // Format with double newlines so the semantic chunker can cleanly split objects
+            if (Array.isArray(parsed)) {
+              text = parsed.map(item => JSON.stringify(item, null, 2)).join("\n\n");
+            } else {
+              text = Object.entries(parsed)
+                .map(([k, v]) => `[${k}]:\n${JSON.stringify(v, null, 2)}`)
+                .join("\n\n");
+            }
+          } catch {
+            text = raw; // Fallback to raw if invalid JSON
+          }
+        } else {
+          text = await readTextFile(path);
+        }
+
         const docId = uid("doc");
         const chunks = await engine.rag!.addDocument(docId, title, text, (done, total) =>
           setProgress(Math.round((done / total) * 100)),

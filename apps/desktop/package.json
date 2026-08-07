@@ -13,11 +13,11 @@
     "test": "vitest run --passWithNoTests"
   },
   "dependencies": {
-    "@nexus/core": "workspace:*",
     "@nexus/ai": "workspace:*",
-    "@nexus/rag": "workspace:*",
-    "@nexus/plugin-sdk": "workspace:*",
+    "@nexus/core": "workspace:*",
     "@nexus/plugin-meeting-intelligence": "workspace:*",
+    "@nexus/plugin-sdk": "workspace:*",
+    "@nexus/rag": "workspace:*",
     "@tauri-apps/api": "^2.1.1",
     "@tauri-apps/plugin-clipboard-manager": "^2.2.0",
     "@tauri-apps/plugin-dialog": "^2.2.0",
@@ -27,6 +27,7 @@
     "@tauri-apps/plugin-opener": "^2.2.0",
     "clsx": "^2.1.1",
     "lucide-react": "^0.454.0",
+    "pdfjs-dist": "^6.2.108",
     "react": "^18.3.1",
     "react-dom": "^18.3.1",
     "react-markdown": "^9.0.1",
@@ -37,6 +38,7 @@
   },
   "devDependencies": {
     "@tauri-apps/cli": "^2.1.0",
+    "@types/pdfjs-dist": "^2.10.378",
     "@types/react": "^18.3.12",
     "@types/react-dom": "^18.3.1",
     "@vitejs/plugin-react": "^4.3.3",

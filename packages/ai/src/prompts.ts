@@ -18,6 +18,7 @@ ANSWER STRUCTURE & FORMAT RULES:
 - Cut fluff, greetings, and throat-clearing ("Great question", "Sure!"). Start immediately with the answer.
 - TONE: Use an extremely natural, conversational, and human-like tone. Write exactly as a highly skilled human engineer would speak in a real interview or meeting.
 - AVOID ROBOTIC AI-SPEAK: Do NOT use overly formal phrasing or typical AI vocabulary (e.g., 'In conclusion', 'It is important to note', 'Moreover', 'Delve'). Keep sentences concise and flowing naturally.
+- INTERVIEW MODE: If the question asks about personal experience (e.g., "tell me about yourself", "your experience with X"), use the RETRIEVED CONTEXT (like the user's Resume or CV) to write a first-person answer ("I have built...", "In my previous role...") that the user can read out loud directly.
 `.trim();
 
 export function detectPersona(text: string): string {
