@@ -26,7 +26,7 @@ import { bridge } from "./bridge";
  * Settings; the names here are the sensible defaults, not hard-coded requirements.
  */
 export const DEFAULT_MODELS: Record<ProviderId, { fast: string; deep: string; vision: string }> = {
-  gemini: { fast: "gemini-2.0-flash", deep: "gemini-2.5-pro", vision: "gemini-2.0-flash" },
+  gemini: { fast: "gemini-3.5-flash-lite", deep: "gemini-3.6-flash", vision: "gemini-3.6-flash" },
   openai: { fast: "gpt-4o-mini", deep: "gpt-4o", vision: "gpt-4o" },
   ollama: { fast: "llama3.2:3b", deep: "llama3.1:8b", vision: "llama3.2-vision:11b" },
   "azure-openai": { fast: "gpt-4o-mini", deep: "gpt-4o", vision: "gpt-4o" },
@@ -47,10 +47,17 @@ export class Engine {
   /** Rebuilds providers from settings + keychain. Called on boot and on every save. */
   async configure(settings: AppSettings): Promise<void> {
     this.settings = settings;
+    this.router.clear();
 
     for (const provider of settings.providers) {
       if (!provider.enabled) continue;
       const apiKey = provider.keyRef ? ((await bridge.resolveProviderKey(provider.keyRef)) ?? "") : "";
+      
+      // Skip cloud providers that don't have an API key configured to avoid 401/403 errors
+      if ((provider.id === "openai" || provider.id === "azure-openai" || provider.id === "gemini") && !apiKey) {
+        continue;
+      }
+
       const creds = { apiKey, ...(provider.baseUrl ? { baseUrl: provider.baseUrl } : {}) };
 
       switch (provider.id) {
@@ -151,10 +158,11 @@ export class Engine {
   async retrieve(query: string): Promise<RagHit[]> {
     if (!this.settings?.ragEnabled || !this.rag) return [];
     try {
-      return await this.rag.search(query, 4);
+      return await Promise.race([
+        this.rag.search(query, 4),
+        new Promise<RagHit[]>((resolve) => setTimeout(() => resolve([]), 120)),
+      ]);
     } catch {
-      // Retrieval is an enhancement. If the embedding endpoint is down, the answer
-      // should still arrive — degraded, not blocked.
       return [];
     }
   }
@@ -185,7 +193,7 @@ export class Engine {
   /** Listen mode: generate what the user should say next, from the live transcript. */
   async *suggest(segments: TranscriptSegment[]): AsyncGenerator<StreamEvent> {
     if (!this.settings) throw new Error("engine is not configured");
-    const window = transcriptWindow(segments);
+    const window = segments.length ? transcriptWindow(segments) : "The user is in a live conversation and needs a quick, direct, and relevant response.";
     const lastQuestion = [...segments].reverse().find((s) => s.source === "system")?.text ?? window;
     const hits = await this.retrieve(lastQuestion);
 

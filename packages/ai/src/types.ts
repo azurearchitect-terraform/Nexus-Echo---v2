@@ -25,6 +25,6 @@ export interface Provider {
 }
 
 export interface ProviderCredentials {
-  apiKey?: string;
-  baseUrl?: string;
+  apiKey?: string | undefined;
+  baseUrl?: string | undefined;
 }

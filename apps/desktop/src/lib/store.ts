@@ -1,12 +1,15 @@
 import { create } from "zustand";
+import { detectPersona } from "@nexus/ai";
 import { AppSettings, uid, type Attachment, type TranscriptSegment, type ProviderId } from "@nexus/core";
 import { bridge } from "./bridge";
 import { engine } from "./engine";
 
 export type Mode = "ask" | "listen";
 
-interface Answer {
+export interface Answer {
   id: string;
+  question?: string | undefined;
+  persona?: string | undefined;
   text: string;
   provider?: ProviderId;
   model?: string;
@@ -17,12 +20,21 @@ interface Answer {
   error?: string;
 }
 
+interface BufferTask {
+  kind: "ask" | "suggest";
+  prompt?: string;
+  useScreen?: boolean;
+}
+
 interface AppStore {
   ready: boolean;
   settings: AppSettings;
   mode: Mode;
   streaming: boolean;
   answer: Answer | null;
+  answersList: Answer[];
+  questionBuffer: BufferTask[];
+  detectedPersona: string | null;
   history: Array<{ role: "user" | "assistant"; content: string }>;
   attachments: Attachment[];
   conversationId: string;
@@ -45,6 +57,7 @@ interface AppStore {
   pushSegment: (segment: TranscriptSegment) => void;
   setSpeaking: (source: "microphone" | "system", speaking: boolean) => void;
   suggest: () => Promise<void>;
+  clearScreen: () => void;
   reset: () => void;
 }
 
@@ -59,9 +72,12 @@ const DEFAULT_SETTINGS = AppSettings.parse({
 export const useStore = create<AppStore>((set, get) => ({
   ready: false,
   settings: DEFAULT_SETTINGS,
-  mode: "ask",
+  mode: "listen",
   streaming: false,
   answer: null,
+  answersList: [],
+  questionBuffer: [],
+  detectedPersona: null,
   history: [],
   attachments: [],
   conversationId: uid("conv"),
@@ -106,7 +122,14 @@ export const useStore = create<AppStore>((set, get) => ({
   },
 
   async ask(prompt, useScreen) {
-    if (get().streaming || !prompt.trim()) return;
+    if (!prompt.trim()) return;
+    if (get().streaming) {
+      set((s) => ({ questionBuffer: [...s.questionBuffer, { kind: "ask", prompt, useScreen }] }));
+      return;
+    }
+
+    const persona = detectPersona(prompt);
+    set({ detectedPersona: persona });
 
     const attachments = [...get().attachments];
     if (useScreen) {
@@ -126,7 +149,7 @@ export const useStore = create<AppStore>((set, get) => ({
     const answerId = uid("ans");
     set({
       streaming: true,
-      answer: { id: answerId, text: "", citations: [] },
+      answer: { id: answerId, question: prompt, persona, text: "", citations: [] },
       history: [...get().history, { role: "user", content: prompt }],
     });
 
@@ -160,7 +183,6 @@ export const useStore = create<AppStore>((set, get) => ({
             set((s) => ({ answer: s.answer ? { ...s.answer, text: s.answer.text + event.delta } : s.answer }));
             break;
           case "swap":
-            // The deep model finished — replace rather than append.
             set((s) => ({
               answer: s.answer
                 ? { ...s.answer, text: "", provider: event.provider, model: event.model, swapped: true }
@@ -182,7 +204,11 @@ export const useStore = create<AppStore>((set, get) => ({
 
       const final = get().answer;
       if (final?.text) {
-        set((s) => ({ history: [...s.history, { role: "assistant", content: final.text }] }));
+        const fullAnswer = { ...final, question: prompt, persona };
+        set((s) => ({
+          answersList: [...s.answersList.filter((a) => a.id !== final.id), fullAnswer],
+          history: [...s.history, { role: "assistant", content: final.text }],
+        }));
         await bridge.saveMessage({
           id: final.id,
           conversationId: get().conversationId,
@@ -192,13 +218,22 @@ export const useStore = create<AppStore>((set, get) => ({
           citations: JSON.stringify(final.citations),
           provider: final.provider ?? null,
           model: final.model ?? null,
-          latencyMs: final.latencyMs ?? null,
-          firstTokenMs: final.firstTokenMs ?? null,
+          latencyMs: final.latencyMs != null ? Math.round(final.latencyMs) : null,
+          firstTokenMs: final.firstTokenMs != null ? Math.round(final.firstTokenMs) : null,
           createdAt: Date.now(),
         });
       }
     } finally {
       set({ streaming: false, attachments: [] });
+      const nextTask = get().questionBuffer[0];
+      if (nextTask) {
+        set((s) => ({ questionBuffer: s.questionBuffer.slice(1) }));
+        if (nextTask.kind === "ask" && nextTask.prompt) {
+          void get().ask(nextTask.prompt, nextTask.useScreen ?? false);
+        } else if (nextTask.kind === "suggest") {
+          void get().suggest();
+        }
+      }
     }
   },
 
@@ -248,12 +283,20 @@ export const useStore = create<AppStore>((set, get) => ({
   },
 
   async suggest() {
-    if (get().streaming) return;
+    if (get().streaming) {
+      set((s) => ({ questionBuffer: [...s.questionBuffer, { kind: "suggest" }] }));
+      return;
+    }
     const segments = get().segments;
-    if (!segments.length) return;
+    const lastQuestion = [...segments].reverse().find((s) => s.text.trim())?.text ?? "";
+    const persona = lastQuestion ? detectPersona(lastQuestion) : (get().detectedPersona ?? undefined);
+    if (persona) set({ detectedPersona: persona });
 
     const answerId = uid("ans");
-    set({ streaming: true, answer: { id: answerId, text: "", citations: [] } });
+    set({
+      streaming: true,
+      answer: { id: answerId, question: lastQuestion || undefined, persona, text: "", citations: [] },
+    });
     try {
       for await (const event of engine.suggest(segments)) {
         if (event.type === "token") {
@@ -272,13 +315,43 @@ export const useStore = create<AppStore>((set, get) => ({
           set((s) => ({ answer: s.answer ? { ...s.answer, error: event.message } : s.answer }));
         }
       }
-      void engine.followUps(get().segments).then((followUps) => set({ followUps }));
+      const final = get().answer;
+      if (final?.text) {
+        set((s) => ({
+          answersList: [...s.answersList.filter((a) => a.id !== final.id), final],
+        }));
+      }
+      if (segments.length) {
+        void engine.followUps(segments).then((followUps) => set({ followUps }));
+      }
     } finally {
       set({ streaming: false });
+      const nextTask = get().questionBuffer[0];
+      if (nextTask) {
+        set((s) => ({ questionBuffer: s.questionBuffer.slice(1) }));
+        if (nextTask.kind === "ask" && nextTask.prompt) {
+          void get().ask(nextTask.prompt, nextTask.useScreen ?? false);
+        } else if (nextTask.kind === "suggest") {
+          void get().suggest();
+        }
+      }
     }
   },
 
+  clearScreen() {
+    set({ answer: null, answersList: [], attachments: [], followUps: [], questionBuffer: [], segments: [], detectedPersona: null });
+  },
+
   reset() {
-    set({ answer: null, history: [], attachments: [], conversationId: uid("conv"), followUps: [] });
+    set({
+      answer: null,
+      answersList: [],
+      history: [],
+      attachments: [],
+      conversationId: uid("conv"),
+      followUps: [],
+      questionBuffer: [],
+      detectedPersona: null,
+    });
   },
 }));

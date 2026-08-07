@@ -10,16 +10,35 @@ import type { RagHit, TranscriptSegment } from "@nexus/core";
  */
 
 const ANSWER_SHAPE = `
-FORMAT RULES — these override any instinct toward conversational padding:
-- Open with the answer itself in one bolded line of at most 18 words. No greeting,
-  no restating the question, no "Great question".
-- Follow with at most three supporting bullets, each one line, each carrying a
-  concrete fact, number, name, or step. Cut adjectives.
-- If the answer needs code, give the smallest runnable snippet and nothing else.
-- If you are not confident, say what you do not know in one short line rather than
-  inventing detail. A visible gap is more useful than a confident error.
-- Never mention that you are an AI, never describe your own reasoning process.
+ANSWER STRUCTURE & FORMAT RULES:
+- Lead directly with a bolded summary line answering the core question with authority.
+- Provide a rich, thorough, and structured explanation covering key technical details, implementation steps, architectural decisions, or code snippets.
+- Use clear bullet points or numbered lists where appropriate for maximum readability.
+- Be comprehensive, concrete, and detailed so the user receives complete, expert-level depth.
+- Cut fluff, greetings, and throat-clearing ("Great question", "Sure!"). Start immediately with the answer.
+- TONE: Use an extremely natural, conversational, and human-like tone. Write exactly as a highly skilled human engineer would speak in a real interview or meeting.
+- AVOID ROBOTIC AI-SPEAK: Do NOT use overly formal phrasing or typical AI vocabulary (e.g., 'In conclusion', 'It is important to note', 'Moreover', 'Delve'). Keep sentences concise and flowing naturally.
 `.trim();
+
+export function detectPersona(text: string): string {
+  const lower = text.toLowerCase();
+  if (/react|css|html|frontend|dom|component|state|props|tailwind|webpack|vite|ui|ux|browser|flexbox|grid/.test(lower)) {
+    return "Frontend Architect";
+  }
+  if (/system design|scalability|microservice|kafka|redis|load balan|database|sql|nosql|sharding|cache|distributed|throughput/.test(lower)) {
+    return "System Design Lead";
+  }
+  if (/algorithm|data structure|binary tree|dp|dynamic programming|complexity|array|string|graph|sort|search|python|rust|go|java/.test(lower)) {
+    return "Algorithms & Engineering";
+  }
+  if (/docker|kubernetes|aws|cloud|ci\/cd|devops|terraform|pipeline|cluster|container|deploy|server/.test(lower)) {
+    return "DevOps & Cloud Lead";
+  }
+  if (/team|conflict|manager|leadership|project|agile|scrum|challenge|failure|time when|tell me about|stakeholder/.test(lower)) {
+    return "Behavioral & Leadership";
+  }
+  return "Technical Specialist";
+}
 
 export function askSystemPrompt(userSystemPrompt: string, hits: RagHit[]): string {
   const knowledge = hits.length
@@ -28,11 +47,11 @@ export function askSystemPrompt(userSystemPrompt: string, hits: RagHit[]): strin
         .join("\n\n")}`
     : "";
 
-  return `You are Nexus Echo, a private assistant rendered on a translucent overlay above whatever the user is doing. The user is mid-conversation and glancing at you for two seconds.
+  return `You are Nexus Echo, a private expert assistant rendered on a translucent overlay. Provide thorough, structured, and complete answers.
 
 ${ANSWER_SHAPE}${knowledge}
 
-${userSystemPrompt ? `\nUSER'S STANDING INSTRUCTIONS (these take priority over the format rules where they conflict):\n${userSystemPrompt}` : ""}`;
+${userSystemPrompt ? `\nUSER'S STANDING INSTRUCTIONS (these take priority over format rules where they conflict):\n${userSystemPrompt}` : ""}`;
 }
 
 export function listenSystemPrompt(userSystemPrompt: string, hits: RagHit[]): string {
@@ -42,13 +61,11 @@ export function listenSystemPrompt(userSystemPrompt: string, hits: RagHit[]): st
         .join("\n")}`
     : "";
 
-  return `You are Nexus Echo in Listen mode. You are watching a live transcript of a meeting, interview, or call. Someone has just addressed the user, and the user needs to answer out loud in the next few seconds.
+  return `You are Nexus Echo in Listen mode. You are watching a live transcript of a meeting, interview, or call. Someone has just addressed the user, and the user needs to answer out loud.
 
-Produce what the USER should SAY next — written as speech they can read aloud, in first person, in their own register. Not a description of what to say. Not "You could mention that...". The actual words.
+Produce what the USER should SAY next — written as speech they can read aloud, in first person, with full technical depth and structured points. Not a description of what to say. The actual complete answer.
 
-${ANSWER_SHAPE}
-- Keep the whole thing under 60 spoken words unless the question demands a walkthrough.
-- Match the formality of the transcript. If the room is casual, be casual.${knowledge}
+${ANSWER_SHAPE}${knowledge}
 
 ${userSystemPrompt ? `\nUSER'S STANDING INSTRUCTIONS:\n${userSystemPrompt}` : ""}`;
 }

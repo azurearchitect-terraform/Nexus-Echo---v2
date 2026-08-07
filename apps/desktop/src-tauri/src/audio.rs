@@ -136,11 +136,16 @@ pub fn list_devices() -> Result<Vec<AudioDevice>> {
     Ok(devices)
 }
 
+#[allow(dead_code)]
+pub struct SendStream(pub cpal::Stream);
+unsafe impl Send for SendStream {}
+unsafe impl Sync for SendStream {}
+
 pub struct CaptureSession {
     running: Arc<AtomicBool>,
     started_at: std::time::Instant,
     #[allow(dead_code)]
-    streams: Mutex<Vec<cpal::Stream>>,
+    streams: Mutex<Vec<SendStream>>,
 }
 
 impl CaptureSession {
@@ -179,9 +184,12 @@ pub fn start_stream(
             .ok_or_else(|| anyhow!("no system audio device — install a loopback driver"))?,
     };
 
-    let config = device.default_input_config()?;
+    let config = device
+        .default_input_config()
+        .or_else(|_| device.default_output_config())?;
     let in_rate = config.sample_rate().0;
     let channels = config.channels() as usize;
+    let sample_format = config.sample_format();
     let frame_ms = 30u32;
     let frame_len = (TARGET_SAMPLE_RATE * frame_ms / 1000) as usize;
 
@@ -193,62 +201,94 @@ pub fn start_stream(
     let app_cb = app.clone();
     let err_app = app.clone();
 
-    let stream = device.build_input_stream(
-        &config.config(),
-        move |data: &[f32], _| {
-            if !running.load(Ordering::SeqCst) {
-                return;
+    let process_samples = move |data: &[f32]| {
+        if !running.load(Ordering::SeqCst) {
+            return;
+        }
+
+        // Downmix to mono, then decimate to 16 kHz.
+        let mono: Vec<f32> = data
+            .chunks(channels)
+            .map(|c| c.iter().sum::<f32>() / channels as f32)
+            .collect();
+        let resampled = decimate(&mono, in_rate, TARGET_SAMPLE_RATE);
+
+        let mut buf = carry.lock();
+        buf.extend_from_slice(&resampled);
+
+        while buf.len() >= frame_len {
+            let frame: Vec<f32> = buf.drain(..frame_len).collect();
+            let (transition, energy) = vad.lock().push(&frame);
+
+            match transition {
+                Some(true) => {
+                    *utterance_start.lock() = epoch.elapsed().as_millis() as u64;
+                    pending.lock().clear();
+                    let _ = app_cb.emit("nexus://vad", VadEvent { source, speaking: true, energy });
+                }
+                Some(false) => {
+                    let samples = std::mem::take(&mut *pending.lock());
+                    let _ = app_cb.emit("nexus://vad", VadEvent { source, speaking: false, energy });
+                    if samples.len() > (TARGET_SAMPLE_RATE as usize / 4) {
+                        let peak = samples.iter().fold(0f32, |a, s| a.max(s.abs()));
+                        let utterance = Utterance {
+                            source,
+                            start_ms: *utterance_start.lock(),
+                            end_ms: epoch.elapsed().as_millis() as u64,
+                            wav_base64: encode_wav(&samples),
+                            peak_energy: peak,
+                        };
+                        let _ = app_cb.emit("nexus://utterance", utterance);
+                    }
+                }
+                None => {}
             }
 
-            // Downmix to mono, then decimate to 16 kHz.
-            let mono: Vec<f32> = data
-                .chunks(channels)
-                .map(|c| c.iter().sum::<f32>() / channels as f32)
-                .collect();
-            let resampled = decimate(&mono, in_rate, TARGET_SAMPLE_RATE);
-
-            let mut buf = carry.lock();
-            buf.extend_from_slice(&resampled);
-
-            while buf.len() >= frame_len {
-                let frame: Vec<f32> = buf.drain(..frame_len).collect();
-                let (transition, energy) = vad.lock().push(&frame);
-
-                match transition {
-                    Some(true) => {
-                        *utterance_start.lock() = epoch.elapsed().as_millis() as u64;
-                        pending.lock().clear();
-                        let _ = app_cb.emit("nexus://vad", VadEvent { source, speaking: true, energy });
-                    }
-                    Some(false) => {
-                        let samples = std::mem::take(&mut *pending.lock());
-                        let _ = app_cb.emit("nexus://vad", VadEvent { source, speaking: false, energy });
-                        if samples.len() > (TARGET_SAMPLE_RATE as usize / 4) {
-                            let peak = samples.iter().fold(0f32, |a, s| a.max(s.abs()));
-                            let utterance = Utterance {
-                                source,
-                                start_ms: *utterance_start.lock(),
-                                end_ms: epoch.elapsed().as_millis() as u64,
-                                wav_base64: encode_wav(&samples),
-                                peak_energy: peak,
-                            };
-                            let _ = app_cb.emit("nexus://utterance", utterance);
-                        }
-                    }
-                    None => {}
-                }
-
-                if vad.lock().is_speaking() {
-                    pending.lock().extend_from_slice(&frame);
-                }
+            if vad.lock().is_speaking() {
+                pending.lock().extend_from_slice(&frame);
             }
-        },
-        move |err| {
-            tracing::error!("audio stream error: {err}");
-            let _ = err_app.emit("nexus://audio-error", err.to_string());
-        },
-        None,
-    )?;
+        }
+    };
+
+    let stream_config = config.config();
+    let err_cb = move |err: cpal::StreamError| {
+        tracing::error!("audio stream error: {err}");
+        let _ = err_app.emit("nexus://audio-error", err.to_string());
+    };
+
+    let process = Arc::new(process_samples);
+
+    let stream = match sample_format {
+        cpal::SampleFormat::F32 => {
+            let p = process.clone();
+            device.build_input_stream(&stream_config, move |d: &[f32], _| p(d), err_cb, None)?
+        }
+        cpal::SampleFormat::I16 => {
+            let p = process.clone();
+            device.build_input_stream(
+                &stream_config,
+                move |d: &[i16], _| {
+                    let f: Vec<f32> = d.iter().map(|&s| s as f32 / i16::MAX as f32).collect();
+                    p(&f);
+                },
+                err_cb,
+                None,
+            )?
+        }
+        cpal::SampleFormat::U16 => {
+            let p = process.clone();
+            device.build_input_stream(
+                &stream_config,
+                move |d: &[u16], _| {
+                    let f: Vec<f32> = d.iter().map(|&s| (s as f32 - 32768.0) / 32768.0).collect();
+                    p(&f);
+                },
+                err_cb,
+                None,
+            )?
+        }
+        format => return Err(anyhow!("unsupported sample format '{format}'")),
+    };
 
     stream.play()?;
     Ok(stream)
@@ -311,6 +351,6 @@ pub fn new_session() -> (Arc<AtomicBool>, std::time::Instant, CaptureSession) {
 
 impl CaptureSession {
     pub fn attach(&self, stream: cpal::Stream) {
-        self.streams.lock().push(stream);
+        self.streams.lock().push(SendStream(stream));
     }
 }

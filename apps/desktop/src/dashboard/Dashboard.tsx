@@ -43,7 +43,7 @@ export function Dashboard() {
     <div className="flex h-screen bg-[#0a0c11] text-white">
       <aside className="flex w-60 shrink-0 flex-col border-r border-white/5 bg-black/30 p-3">
         <div className="mb-6 px-2 pt-2">
-          <h1 className="text-sm font-semibold tracking-tight">Nexus Echo</h1>
+          <h1 className="text-sm font-semibold tracking-tight">Nexus-Echo-V2</h1>
           <p className="text-[11px] text-white/30">Local-first · v2.0.0</p>
         </div>
 

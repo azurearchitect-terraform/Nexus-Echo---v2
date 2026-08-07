@@ -286,6 +286,26 @@ impl Db {
     }
 }
 
+fn de_opt_i64_from_f64<'de, D>(deserializer: D) -> Result<Option<i64>, D::Error>
+where
+    D: serde::Deserializer<'de>,
+{
+    use serde::de::Deserialize;
+    let v = Option::<serde_json::Value>::deserialize(deserializer)?;
+    match v {
+        Some(serde_json::Value::Number(n)) => {
+            if let Some(i) = n.as_i64() {
+                Ok(Some(i))
+            } else if let Some(f) = n.as_f64() {
+                Ok(Some(f.round() as i64))
+            } else {
+                Ok(None)
+            }
+        }
+        _ => Ok(None),
+    }
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct StoredMessage {
@@ -297,7 +317,9 @@ pub struct StoredMessage {
     pub citations: String,
     pub provider: Option<String>,
     pub model: Option<String>,
+    #[serde(default, deserialize_with = "de_opt_i64_from_f64")]
     pub latency_ms: Option<i64>,
+    #[serde(default, deserialize_with = "de_opt_i64_from_f64")]
     pub first_token_ms: Option<i64>,
     pub created_at: i64,
 }

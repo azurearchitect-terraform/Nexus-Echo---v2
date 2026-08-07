@@ -11,7 +11,14 @@ export default defineConfig({
     watch: { ignored: ["**/src-tauri/**"] },
   },
   resolve: {
-    alias: { "@": path.resolve(__dirname, "./src") },
+    alias: {
+      "@": path.resolve(__dirname, "./src"),
+      "@nexus/core": path.resolve(__dirname, "../../packages/core/src/index.ts"),
+      "@nexus/ai": path.resolve(__dirname, "../../packages/ai/src/index.ts"),
+      "@nexus/rag": path.resolve(__dirname, "../../packages/rag/src/index.ts"),
+      "@nexus/plugin-sdk": path.resolve(__dirname, "../../packages/plugin-sdk/src/index.ts"),
+      "@nexus/plugin-meeting-intelligence": path.resolve(__dirname, "../../plugins/meeting-intelligence/src/index.ts"),
+    },
   },
   envPrefix: ["VITE_", "TAURI_"],
   build: {

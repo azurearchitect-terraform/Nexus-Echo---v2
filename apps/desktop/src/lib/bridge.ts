@@ -9,7 +9,9 @@ import type { StealthConfig } from "@nexus/core";
 export const bridge = {
   applyStealth: (payload: StealthConfig) => invoke<StealthReport>("apply_stealth", { payload }),
   toggleOverlay: () => invoke<boolean>("toggle_overlay"),
+  resizeOverlay: (height: number) => invoke<void>("resize_overlay", { height }),
   panicHide: () => invoke<void>("panic_hide"),
+  focusOverlay: () => invoke<void>("focus_overlay"),
   setClickThrough: (payload: boolean) => invoke<void>("set_click_through", { payload }),
   openDashboard: () => invoke<void>("open_dashboard"),
 

@@ -55,7 +55,7 @@ fn capture_inner(region: Option<CaptureRegion>) -> Result<Screenshot> {
     let monitors = xcap::Monitor::all().map_err(|e| anyhow!("monitor enumeration failed: {e}"))?;
     let monitor = monitors
         .into_iter()
-        .find(|m| m.is_primary().unwrap_or(false))
+        .find(|m| m.is_primary())
         .ok_or_else(|| anyhow!("no primary monitor"))?;
 
     let mut image = monitor.capture_image().map_err(|e| anyhow!("capture failed: {e}"))?;

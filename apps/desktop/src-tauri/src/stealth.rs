@@ -32,7 +32,7 @@ impl Default for StealthConfig {
     fn default() -> Self {
         Self {
             content_protected: true,
-            never_steal_focus: true,
+            never_steal_focus: false,
             hide_from_taskbar: true,
             hide_from_dock: true,
             always_on_top: true,

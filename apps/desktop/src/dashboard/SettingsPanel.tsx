@@ -30,6 +30,7 @@ export function SettingsPanel() {
   const [keys, setKeys] = useState<Record<string, string>>({});
   const [reveal, setReveal] = useState<Record<string, boolean>>({});
   const [saved, setSaved] = useState<string | null>(null);
+  const [modelEdits, setModelEdits] = useState<Record<string, { fast?: string; deep?: string; vision?: string }>>({});
 
   const saveKey = async (id: ProviderId, keyRef: string) => {
     const value = keys[keyRef];
@@ -41,10 +42,33 @@ export function SettingsPanel() {
     await saveSettings(settings);
   };
 
+  const saveModels = async (providerId: ProviderId) => {
+    const edits = modelEdits[providerId] ?? {};
+    await saveSettings({
+      ...settings,
+      providers: settings.providers.map((p) =>
+        p.id === providerId
+          ? {
+              ...p,
+              models: {
+                ...p.models,
+                ...(edits.fast ? { fast: edits.fast } : {}),
+                ...(edits.deep ? { deep: edits.deep } : {}),
+                ...(edits.vision ? { vision: edits.vision } : {}),
+              },
+            }
+          : p,
+      ),
+    });
+    setModelEdits((m) => ({ ...m, [providerId]: {} }));
+    setSaved(`models-${providerId}`);
+    setTimeout(() => setSaved(null), 1800);
+  };
+
   return (
     <section className="space-y-8">
       <header>
-        <h2 className="text-lg font-semibold">Providers & routing</h2>
+        <h2 className="text-lg font-semibold">Providers &amp; routing</h2>
         <p className="text-[13px] text-white/40">
           Keys are stored in your operating system's keychain, never in the database and never in a
           settings file.
@@ -116,19 +140,60 @@ export function SettingsPanel() {
         }
       />
 
-      {/* ---------------- credentials ---------------- */}
+      {/* ---------------- STT engine picker ---------------- */}
+      <div className="space-y-2">
+        <h3 className="text-[13px] font-medium">Speech-to-Text engine</h3>
+        <p className="text-[12px] text-white/40">
+          Which engine transcribes audio. <strong className="text-white/60">Auto</strong> tries Gemini → OpenAI Whisper → Local in order.
+        </p>
+        <div className="grid grid-cols-2 gap-2">
+          {([
+            { value: "auto", label: "Auto (recommended)", desc: "Gemini → Whisper → Local" },
+            { value: "gemini", label: "Gemini Flash", desc: "Fast, multimodal STT via API" },
+            { value: "openai-whisper", label: "OpenAI Whisper", desc: "whisper-1 via API" },
+            { value: "local-whisper", label: "Local Whisper", desc: "On-device, fully offline" },
+          ] as const).map(({ value, label, desc }) => (
+            <button
+              key={value}
+              onClick={() =>
+                void saveSettings({ ...settings, audio: { ...settings.audio, sttEngine: value } })
+              }
+              className={cn(
+                "rounded-xl border p-3 text-left transition-colors",
+                settings.audio.sttEngine === value
+                  ? "border-accent/40 bg-accent/[0.07]"
+                  : "border-white/5 bg-white/[0.02] hover:border-white/15",
+              )}
+            >
+              <div className="flex items-center justify-between">
+                <span className="text-[13px] font-medium">{label}</span>
+                {settings.audio.sttEngine === value && <Check className="h-3.5 w-3.5 text-accent" />}
+              </div>
+              <p className="mt-0.5 text-[11px] text-white/40">{desc}</p>
+            </button>
+          ))}
+        </div>
+      </div>
+
+      {/* ---------------- credentials + model names ---------------- */}
       <div className="space-y-3">
-        <h3 className="text-[13px] font-medium">Credentials</h3>
+        <h3 className="text-[13px] font-medium">Credentials &amp; Models</h3>
         {settings.providers.map((provider) => {
           const keyRef = provider.keyRef ?? `${provider.id}_api_key`;
-          const models = DEFAULT_MODELS[provider.id];
+          const defaults = DEFAULT_MODELS[provider.id];
+          const edits = modelEdits[provider.id] ?? {};
+          const currentModels = {
+            fast: provider.models?.fast ?? defaults?.fast ?? "",
+            deep: provider.models?.deep ?? defaults?.deep ?? "",
+            vision: provider.models?.vision ?? defaults?.vision ?? "",
+          };
           return (
-            <div key={provider.id} className="rounded-xl border border-white/5 bg-white/[0.02] p-3.5">
+            <div key={provider.id} className="rounded-xl border border-white/5 bg-white/[0.02] p-3.5 space-y-3">
               <div className="flex items-center justify-between">
                 <div>
                   <span className="text-[13px] font-medium capitalize">{provider.id}</span>
                   <p className="font-mono text-[11px] text-white/30">
-                    {models.fast} · {models.deep}
+                    fast: {currentModels.fast} · deep: {currentModels.deep}
                   </p>
                 </div>
                 <Toggle
@@ -156,10 +221,10 @@ export function SettingsPanel() {
                     })
                   }
                   placeholder="http://127.0.0.1:11434"
-                  className="mt-2.5 w-full rounded-lg border border-white/10 bg-black/40 px-2.5 py-1.5 font-mono text-[12px]"
+                  className="w-full rounded-lg border border-white/10 bg-black/40 px-2.5 py-1.5 font-mono text-[12px]"
                 />
               ) : (
-                <div className="mt-2.5 flex gap-1.5">
+                <div className="flex gap-1.5">
                   <div className="relative flex-1">
                     <input
                       type={reveal[keyRef] ? "text" : "password"}
@@ -179,10 +244,39 @@ export function SettingsPanel() {
                     onClick={() => void saveKey(provider.id, keyRef)}
                     className="rounded-lg bg-accent/15 px-3 text-[12px] font-medium text-accent hover:bg-accent/25"
                   >
-                    {saved === provider.id ? "Saved" : "Save"}
+                    {saved === provider.id ? "Saved ✓" : "Save"}
                   </button>
                 </div>
               )}
+
+              {/* Model name overrides */}
+              <div className="space-y-1.5">
+                <p className="text-[11px] text-white/35 font-medium uppercase tracking-widest">Model names</p>
+                <div className="grid grid-cols-3 gap-2">
+                  {(["fast", "deep", "vision"] as const).map((role) => (
+                    <div key={role}>
+                      <label className="block text-[10px] text-white/35 mb-0.5 capitalize">{role}</label>
+                      <input
+                        value={edits[role] ?? currentModels[role]}
+                        onChange={(e) =>
+                          setModelEdits((m) => ({
+                            ...m,
+                            [provider.id]: { ...(m[provider.id] ?? {}), [role]: e.target.value },
+                          }))
+                        }
+                        placeholder={defaults?.[role] ?? role}
+                        className="w-full rounded-lg border border-white/10 bg-black/40 px-2 py-1 font-mono text-[11px] placeholder:text-white/20"
+                      />
+                    </div>
+                  ))}
+                </div>
+                <button
+                  onClick={() => void saveModels(provider.id)}
+                  className="rounded-lg border border-white/10 px-3 py-1 text-[11px] text-white/50 hover:border-accent/40 hover:text-accent transition-colors"
+                >
+                  {saved === `models-${provider.id}` ? "Saved ✓" : "Apply model names"}
+                </button>
+              </div>
             </div>
           );
         })}

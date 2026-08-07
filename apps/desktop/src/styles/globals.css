@@ -16,11 +16,10 @@
     overscroll-behavior: none;
   }
 
-  /* Text must never be selectable by an accidental drag during a call — a blue
-     selection highlight is exactly the kind of motion that draws a viewer's eye. */
+  /* Enable text selection and copy-paste on screen */
   .no-select {
-    user-select: none;
-    -webkit-user-select: none;
+    user-select: text;
+    -webkit-user-select: text;
   }
 
   ::-webkit-scrollbar {

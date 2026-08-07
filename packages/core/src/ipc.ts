@@ -20,13 +20,13 @@ export async function call<TIn, TOut>(
 }
 
 export function subscribe<T>(channel: string, schema: z.ZodType<T>, onEvent: (value: T) => void) {
-  const unlisten = listen<unknown>(channel, (e) => {
+  const unlisten = listen<unknown>(channel, (e: { payload: unknown }) => {
     const parsed = schema.safeParse(e.payload);
     if (parsed.success) onEvent(parsed.data);
     else console.error(`[ipc] dropped malformed ${channel} event`, parsed.error.flatten());
   });
   return () => {
-    void unlisten.then((fn) => fn());
+    void unlisten.then((fn: () => void) => fn());
   };
 }
 

@@ -51,8 +51,8 @@ export type RoutingPolicy = z.infer<typeof RoutingPolicy>;
 export const StealthConfig = z.object({
   /** Excludes the window from OS screen-capture APIs. */
   contentProtected: z.boolean().default(true),
-  /** Window never becomes key/active — the app underneath keeps focus. */
-  neverStealFocus: z.boolean().default(true),
+  /** Window can become key/active when user types in Ask mode. */
+  neverStealFocus: z.boolean().default(false),
   hideFromTaskbar: z.boolean().default(true),
   hideFromDock: z.boolean().default(true),
   alwaysOnTop: z.boolean().default(true),
@@ -72,11 +72,13 @@ export const AudioConfig = z.object({
   systemDeviceId: z.string().optional(),
   sampleRate: z.number().int().default(16000),
   /** Energy threshold below which a frame counts as silence. */
-  vadThreshold: z.number().min(0).max(1).default(0.02),
+  vadThreshold: z.number().min(0).max(1).default(0.01),
   /** Silence duration that closes an utterance. */
-  vadSilenceMs: z.number().int().default(700),
+  vadSilenceMs: z.number().int().default(500),
   diarize: z.boolean().default(true),
   language: z.string().default("auto"),
+  /** Which STT engine to use: auto = try gemini then openai then local */
+  sttEngine: z.enum(["auto", "gemini", "openai-whisper", "local-whisper"]).default("auto"),
 });
 export type AudioConfig = z.infer<typeof AudioConfig>;
 

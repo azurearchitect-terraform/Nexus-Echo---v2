@@ -36,6 +36,11 @@ export class HybridRouter {
   private providers = new Map<ProviderId, Provider>();
   private health = new Map<ProviderId, Health>();
 
+  clear(): void {
+    this.providers.clear();
+    this.health.clear();
+  }
+
   register(provider: Provider): void {
     this.providers.set(provider.id, provider);
     if (!this.health.has(provider.id)) {
@@ -107,8 +112,15 @@ export class HybridRouter {
     const hasImage = (input.attachments ?? []).some(
       (a) => a.kind === "image" || a.kind === "screenshot",
     );
-    const set = input.models[id];
-    const model = hasImage ? set.vision : role === "deep" ? set.deep : set.fast;
+    const fallbackModels: Record<ProviderId, { fast: string; deep: string; vision: string }> = {
+      gemini: { fast: "gemini-3.5-flash-lite", deep: "gemini-3.1-pro-preview", vision: "gemini-3.6-flash" },
+      openai: { fast: "gpt-4o-mini", deep: "gpt-4o", vision: "gpt-4o" },
+      ollama: { fast: "llama3.2:3b", deep: "llama3.1:8b", vision: "llama3.2-vision:11b" },
+      "azure-openai": { fast: "gpt-4o-mini", deep: "gpt-4o", vision: "gpt-4o" },
+      custom: { fast: "default", deep: "default", vision: "default" },
+    };
+    const set = input.models?.[id] ?? fallbackModels[id] ?? fallbackModels.gemini;
+    const model = (hasImage ? set.vision : role === "deep" ? set.deep : set.fast) || fallbackModels[id]?.fast || "gemini-1.5-flash";
     return {
       system: input.system,
       messages: input.messages,

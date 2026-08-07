@@ -45,6 +45,10 @@ export function createOpenAIProvider(creds: ProviderCredentials): Provider {
         }),
       });
 
+      if (!res.ok) {
+        throw new Error(`OpenAI HTTP ${res.status}: ${res.statusText}`);
+      }
+
       for await (const frame of readSSE(res)) {
         const choices = frame["choices"] as Array<{ delta?: { content?: string } }> | undefined;
         const delta = choices?.[0]?.delta?.content;

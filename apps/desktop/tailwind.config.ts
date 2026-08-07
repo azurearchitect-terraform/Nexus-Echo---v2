@@ -28,6 +28,7 @@ export default {
       animation: {
         "fade-up": "fadeUp 160ms cubic-bezier(0.16,1,0.3,1)",
         "pulse-soft": "pulseSoft 1.8s ease-in-out infinite",
+        "typewriter-cursor": "typewriterBlink 0.6s ease-in-out infinite",
       },
       keyframes: {
         fadeUp: {
@@ -37,6 +38,10 @@ export default {
         pulseSoft: {
           "0%,100%": { opacity: "0.45" },
           "50%": { opacity: "1" },
+        },
+        typewriterBlink: {
+          "0%,100%": { opacity: "1" },
+          "50%": { opacity: "0" },
         },
       },
       backdropBlur: { xs: "2px" },

@@ -1,20 +1,29 @@
 import { useEffect, useRef, useState } from "react";
+import { useTypewriter } from "@/hooks/useTypewriter";
 import { listen } from "@tauri-apps/api/event";
 import {
   Camera,
+  Check,
   Command,
+  Copy,
   Ear,
+  Eraser,
   Eye,
   EyeOff,
+  KeyRound,
   LayoutDashboard,
   Loader2,
   MessageSquare,
+  Mic,
   Paperclip,
   Send,
+  Sparkles,
   Square,
+  Sun,
   X,
   Zap,
 } from "lucide-react";
+import type { RoutingMode } from "@nexus/core";
 import { useStore } from "@/lib/store";
 import { bridge } from "@/lib/bridge";
 import { Markdown } from "@/components/Markdown";
@@ -45,6 +54,7 @@ export function Overlay() {
     setMode,
     streaming,
     answer,
+    answersList,
     ask,
     listening,
     startListening,
@@ -57,6 +67,7 @@ export function Overlay() {
     suggest,
     followUps,
     settings,
+    saveSettings,
     attachments,
     addAttachment,
     clearAttachments,
@@ -66,7 +77,13 @@ export function Overlay() {
   const [input, setInput] = useState("");
   const [useScreen, setUseScreen] = useState(false);
   const [collapsed, setCollapsed] = useState(false);
+  const [copied, setCopied] = useState(false);
+  const [liveQuestion, setLiveQuestion] = useState<string | null>(null);
   const inputRef = useRef<HTMLTextAreaElement>(null);
+
+  // Smooth character-drip typewriter for the live streaming answer.
+  // Architecture: rAF loop drains pending chars at 3 chars/frame — no setTimeout jitter.
+  const typedText = useTypewriter(answer?.text ?? "", streaming, 3);
 
   // ---- hotkeys from the Rust side -------------------------------------------
   useEffect(() => {
@@ -96,6 +113,22 @@ export function Overlay() {
     };
   }, [listening, setMode, startListening, stopListening, suggest]);
 
+  // ---- Auto-start listening when entering Listen mode -----------------------
+  useEffect(() => {
+    if (mode === "listen" && !listening && ready) {
+      void startListening();
+    }
+  }, [mode, listening, ready, startListening]);
+
+  // ---- Auto-expand window height when answer arrives/streams -----------------
+  useEffect(() => {
+    if (streaming || answer?.text || answersList.length > 0) {
+      void bridge.resizeOverlay(740);
+    } else {
+      void bridge.resizeOverlay(320);
+    }
+  }, [streaming, answer?.text, answersList.length]);
+
   // ---- VAD indicator ---------------------------------------------------------
   useEffect(() => {
     const unlisten = listen<{ source: "microphone" | "system"; speaking: boolean }>(
@@ -119,6 +152,11 @@ export function Overlay() {
       const text = await transcribe(wavBase64, settings.audio.language);
       if (!text.trim()) return;
 
+      // Flash the question immediately — before AI starts thinking.
+      // This gives the user instant visual confirmation of what was heard.
+      setLiveQuestion(text);
+      setTimeout(() => setLiveQuestion(null), 8000);
+
       const segment: TranscriptSegment = {
         id: uid("seg"),
         meetingId: useStore.getState().meetingId ?? "",
@@ -129,16 +167,7 @@ export function Overlay() {
         source: source === "microphone" ? "microphone" : "system",
         isFinal: true,
       };
-      pushSegment(segment);
-
-      // Auto-respond only fires on someone else's question. Reacting to the
-      // user's own speech produces answers to questions they just asked aloud,
-      // which is noise at exactly the wrong moment.
-      const trigger = useStore.getState().settings.autoRespond;
-      if (source === "system" && trigger === "question-detected" && looksLikeQuestion(text)) {
-        void useStore.getState().suggest();
-      }
-    });
+      pushSegment(segment);    });
     return () => {
       void unlisten.then((fn) => fn());
     };
@@ -165,9 +194,16 @@ export function Overlay() {
     );
   }
 
+  const copyAnswer = async () => {
+    if (!answer?.text) return;
+    await navigator.clipboard.writeText(answer.text);
+    setCopied(true);
+    setTimeout(() => setCopied(false), 2000);
+  };
+
   return (
     <div className="flex h-screen flex-col p-2">
-      <section className="panel no-select flex min-h-0 flex-1 flex-col overflow-hidden">
+      <section className="panel flex min-h-0 flex-1 flex-col overflow-hidden">
         {/* ---------- header: the only drag surface ---------- */}
         <header className="drag-region flex shrink-0 items-center gap-3 border-b border-glass-edge px-3 py-2">
           <div className="flex items-center gap-1 rounded-lg bg-black/30 p-0.5 no-drag">
@@ -185,17 +221,43 @@ export function Overlay() {
             />
           </div>
 
-          <div className="flex flex-1 items-center gap-3">
-            {listening ? (
-              <>
+          <div className="flex flex-1 items-center gap-2.5">
+            <select
+              value={settings.routing.mode}
+              onChange={(e) =>
+                void saveSettings({
+                  ...settings,
+                  routing: { ...settings.routing, mode: e.target.value as RoutingMode },
+                })
+              }
+              className="no-drag rounded-md border border-white/20 bg-neutral-900/90 px-2 py-0.5 font-mono text-[10px] text-white shadow-sm hover:border-accent/60 focus:outline-none focus:ring-1 focus:ring-accent cursor-pointer [color-scheme:dark]"
+              title="Change Speed Mode directly from main screen"
+            >
+              <option value="hybrid-race" className="bg-neutral-900 text-white font-mono text-[11px] py-1">⚡ Hybrid Race</option>
+              <option value="hybrid-tier" className="bg-neutral-900 text-white font-mono text-[11px] py-1">🎯 Hybrid Tier</option>
+              <option value="single" className="bg-neutral-900 text-white font-mono text-[11px] py-1">👤 Single Provider</option>
+              <option value="offline" className="bg-neutral-900 text-white font-mono text-[11px] py-1">🔒 Offline (Ollama)</option>
+            </select>
+
+            {listening && (
+              <div className="flex items-center gap-1.5 border-l border-white/10 pl-2">
                 <Waveform active={speakingMic} tone="mic" />
                 <Waveform active={speakingSystem} tone="system" />
-              </>
-            ) : (
-              <StatusDot active label={settings.routing.mode.replace("-", " ")} />
+              </div>
             )}
+
+            {useStore.getState().detectedPersona && (
+              <span
+                className="flex items-center gap-1 rounded border border-purple-500/30 bg-purple-500/10 px-1.5 py-0.5 text-purple-300 font-mono text-[10px]"
+                title="Auto-detected Interviewer Persona"
+              >
+                <Sparkles className="h-2.5 w-2.5 text-purple-400" />
+                {useStore.getState().detectedPersona}
+              </span>
+            )}
+
             {answer?.firstTokenMs ? (
-              <span className="font-mono text-[10px] text-white/30" title="Time to first token">
+              <span className="font-mono text-[10px] text-white/30 ml-auto" title="Time to first token">
                 <Zap className="mr-0.5 inline h-2.5 w-2.5" />
                 {formatMs(answer.firstTokenMs)}
               </span>
@@ -203,6 +265,13 @@ export function Overlay() {
           </div>
 
           <div className="flex items-center gap-0.5 no-drag">
+            <button
+              className="btn-ghost"
+              onClick={() => useStore.getState().clearScreen()}
+              title="Clear screen (keep history)"
+            >
+              <Eraser className="h-3.5 w-3.5" />
+            </button>
             <button className="btn-ghost" onClick={() => setCollapsed((c) => !c)} title="Collapse">
               {collapsed ? <Eye className="h-3.5 w-3.5" /> : <EyeOff className="h-3.5 w-3.5" />}
             </button>
@@ -219,39 +288,147 @@ export function Overlay() {
           <>
             {/* ---------- body ---------- */}
             <div className="min-h-0 flex-1 overflow-y-auto px-3 py-2.5">
-              {mode === "listen" && !answer?.text ? (
-                <Transcript segments={segments} />
-              ) : answer ? (
-                <div className="animate-fade-up">
-                  {answer.error ? (
-                    <p className="rounded-lg border border-danger/30 bg-danger/10 px-3 py-2 text-[12px] text-danger">
-                      {answer.error}
-                    </p>
-                  ) : (
-                    <Markdown>{answer.text || "…"}</Markdown>
-                  )}
 
-                  {answer.citations.length > 0 && (
-                    <div className="mt-2.5 flex flex-wrap gap-1">
-                      {answer.citations.map((c) => (
-                        <span
-                          key={c.docId}
-                          className="rounded border border-accent/20 bg-accent/10 px-1.5 py-0.5 text-[10px] text-accent/80"
-                        >
-                          {c.title}
+              {/* Live capture banner: "Hearing…" while speaker is active, question flash after STT */}
+              {(speakingSystem || speakingMic || liveQuestion) && mode === "listen" && (
+                <div className="animate-fade-up mb-3 rounded-lg border border-accent/25 bg-accent/5 px-3 py-2.5">
+                  {liveQuestion ? (
+                    <div>
+                      <div className="mb-1 flex items-center gap-1.5 font-mono text-[9px] text-accent/70 uppercase tracking-widest">
+                        <span className="h-1.5 w-1.5 rounded-full bg-accent animate-pulse" />
+                        Captured — processing…
+                      </div>
+                      <p className="text-[14px] font-medium text-accent leading-snug">{liveQuestion}</p>
+                    </div>
+                  ) : (
+                    <div className="flex items-center gap-2.5">
+                      <span className="h-2 w-2 rounded-full bg-accent animate-pulse shrink-0" />
+                      <div className="flex-1">
+                        <span className="font-mono text-[10px] text-accent/80 uppercase tracking-widest">
+                          {speakingSystem ? "Speaker" : "You"} is speaking…
                         </span>
-                      ))}
+                        <div className="mt-1 flex items-end gap-[2px] h-4">
+                          {[3,5,7,4,6,8,3,5,4,7,5,3,6,4,7].map((h, i) => (
+                            <span
+                              key={i}
+                              className="rounded-sm bg-accent/50 w-[3px]"
+                              style={{
+                                height: `${h}px`,
+                                animation: `pulseSoft ${0.4 + (i % 4) * 0.15}s ease-in-out infinite`,
+                                animationDelay: `${i * 40}ms`,
+                              }}
+                            />
+                          ))}
+                        </div>
+                      </div>
+                    </div>
+                  )}
+                </div>
+              )}
+
+              {answersList.length > 0 || answer ? (
+                <div className="space-y-4 flex flex-col">
+                  {answer && !answersList.some((a) => a.id === answer.id) && (
+                    <div className="animate-fade-up border-b border-accent/20 pb-4 mb-2">
+                      {answersList.length > 0 && (
+                        <div className="mb-3 flex items-center justify-center gap-2 font-mono text-[9px] text-accent">
+                          <span className="h-1.5 w-1.5 rounded-full bg-accent animate-pulse" />
+                          <span>STREAMING ANSWER</span>
+                          <span className="h-1.5 w-1.5 rounded-full bg-accent animate-pulse" />
+                        </div>
+                      )}
+
+                      {answer.question && (
+                        <div className="mb-2 flex items-start justify-between text-[14px] font-medium text-white/80">
+                          <span className="font-mono text-accent">Q: {answer.question}</span>
+                          {answer.persona && (
+                            <span className="rounded bg-purple-500/15 px-1.5 py-0.5 text-[10px] text-purple-300 ml-2 shrink-0">
+                              {answer.persona}
+                            </span>
+                          )}
+                        </div>
+                      )}
+
+                      {answer.error ? (
+                        <p className="rounded-lg border border-danger/30 bg-danger/10 px-3 py-2 text-[12px] text-danger">
+                          {answer.error}
+                        </p>
+                      ) : (
+                        <div className="relative">
+                          {/*
+                           * Typewriter render:
+                           * - While streaming:  show `typedText` (rAF char-drip) + pulsing cursor
+                           * - After streaming:  show full `answer.text` immediately (hook flushes on active=false)
+                           */}
+                          <Markdown>{(streaming ? typedText : answer.text) || "…"}</Markdown>
+                          {streaming && (
+                            <span
+                              className="inline-block h-4 w-[2px] rounded-sm bg-accent align-middle ml-0.5 animate-[typewriterBlink_0.6s_ease-in-out_infinite]"
+                            />
+                          )}
+                        </div>
+                      )}
                     </div>
                   )}
 
-                  {answer.provider && (
-                    <p className="mt-2 font-mono text-[10px] text-white/25">
-                      {answer.provider} · {answer.model}
-                      {answer.swapped && " · refined"}
-                      {answer.latencyMs ? ` · ${formatMs(answer.latencyMs)}` : ""}
-                    </p>
-                  )}
+                  {[...answersList].reverse().map((item, idx) => (
+                    <div key={item.id} className="animate-fade-up pb-4 border-b border-white/5 last:border-0">
+                      {item.question && (
+                        <div className="mb-2 flex items-start justify-between text-[14px] font-medium text-white/80">
+                          <span className="font-mono text-accent">Q: {item.question}</span>
+                          {item.persona && (
+                            <span className="rounded bg-white/5 px-1.5 py-0.5 text-[10px] text-white/40 ml-2 shrink-0">
+                              {item.persona}
+                            </span>
+                          )}
+                        </div>
+                      )}
+
+                      {item.error ? (
+                        <p className="rounded-lg border border-danger/30 bg-danger/10 px-3 py-2 text-[12px] text-danger">
+                          {item.error}
+                        </p>
+                      ) : (
+                        <div className="opacity-80">
+                          <Markdown>{item.text || "…"}</Markdown>
+                        </div>
+                      )}
+
+                      {item.citations && item.citations.length > 0 && (
+                        <div className="mt-2 flex flex-wrap gap-1">
+                          {item.citations.map((c) => (
+                            <span
+                              key={c.docId}
+                              className="rounded border border-white/10 bg-white/5 px-1.5 py-0.5 text-[10px] text-white/40"
+                            >
+                              {c.title}
+                            </span>
+                          ))}
+                        </div>
+                      )}
+
+                      {item.provider && (
+                        <div className="mt-2 flex items-center justify-between font-mono text-[10px] text-white/25 no-drag">
+                          <span>
+                            {item.provider} · {item.model}
+                            {item.swapped && " · refined"}
+                            {item.latencyMs ? ` · ${formatMs(item.latencyMs)}` : ""}
+                          </span>
+                          <button
+                            onClick={() => void navigator.clipboard.writeText(item.text)}
+                            className="flex items-center gap-1 rounded border border-white/10 px-1.5 py-0.5 text-white/40 hover:bg-white/10 hover:text-white transition-colors"
+                            title="Copy answer to clipboard"
+                          >
+                            <Copy className="h-2.5 w-2.5" />
+                            Copy
+                          </button>
+                        </div>
+                      )}
+                    </div>
+                  ))}
                 </div>
+              ) : mode === "listen" ? (
+                <Transcript segments={segments} />
               ) : (
                 <EmptyState mode={mode} />
               )}
@@ -291,6 +468,8 @@ export function Overlay() {
                     ref={inputRef}
                     value={input}
                     onChange={(e) => setInput(e.target.value)}
+                    onFocus={() => void bridge.focusOverlay()}
+                    onClick={() => void bridge.focusOverlay()}
                     onKeyDown={(e) => {
                       if (e.key === "Enter" && !e.shiftKey) {
                         e.preventDefault();
@@ -314,30 +493,68 @@ export function Overlay() {
                   </button>
                 </div>
               ) : (
-                <div className="flex items-center gap-2">
-                  <button
-                    onClick={() => void (listening ? stopListening() : startListening())}
-                    className={cn(
-                      "flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-[12px] font-medium transition-colors",
-                      listening
-                        ? "bg-danger/15 text-danger hover:bg-danger/25"
-                        : "bg-accent/15 text-accent hover:bg-accent/25",
-                    )}
-                  >
-                    {listening ? <Square className="h-3 w-3" /> : <Ear className="h-3.5 w-3.5" />}
-                    {listening ? "Stop" : "Start listening"}
-                  </button>
+                <div className="flex items-center justify-between gap-2 no-drag font-mono text-[10px]">
+                  {(() => {
+                    const geminiProv = settings.providers.find((p) => p.id === "gemini" && p.enabled);
+                    const openaiProv = settings.providers.find((p) => p.id === "openai" && p.enabled);
+                    const hasGeminiKey = Boolean(geminiProv?.keyRef);
+                    const hasOpenAIKey = Boolean(openaiProv?.keyRef);
+                    const sttLabel = hasGeminiKey ? "STT: Gemini 3.6 Flash" : hasOpenAIKey ? "STT: Whisper" : "STT: No Key";
+                    return (
+                      <div className="flex items-center gap-1.5 overflow-x-auto py-0.5">
+                        <span
+                          onClick={() => void bridge.openDashboard()}
+                          className={cn(
+                            "flex items-center gap-1 rounded border px-1.5 py-0.5 cursor-pointer transition-colors",
+                            hasGeminiKey
+                              ? "border-accent/30 bg-accent/10 text-accent"
+                              : "border-warn/40 bg-warn/10 text-warn hover:bg-warn/20"
+                          )}
+                          title={hasGeminiKey ? "Gemini API Key Active" : "Gemini API key missing. Click to open Settings."}
+                        >
+                          <span className={cn("h-1.5 w-1.5 rounded-full", hasGeminiKey ? "bg-accent" : "bg-warn animate-pulse")} />
+                          Gemini
+                        </span>
 
-                  <button
-                    onClick={() => void suggest()}
-                    disabled={streaming || !segments.length}
-                    className="rounded-lg border border-white/10 px-3 py-1.5 text-[12px] text-white/70
-                               transition-colors hover:bg-white/10 disabled:opacity-30"
-                  >
-                    Suggest a reply
-                  </button>
+                        <span
+                          onClick={() => void bridge.openDashboard()}
+                          className={cn(
+                            "flex items-center gap-1 rounded border px-1.5 py-0.5 cursor-pointer transition-colors",
+                            hasOpenAIKey
+                              ? "border-emerald-500/30 bg-emerald-500/10 text-emerald-400"
+                              : "border-white/10 bg-white/5 text-white/40 hover:bg-white/10"
+                          )}
+                          title={hasOpenAIKey ? "OpenAI API Key Active" : "OpenAI API key optional. Click to open Settings."}
+                        >
+                          <span className={cn("h-1.5 w-1.5 rounded-full", hasOpenAIKey ? "bg-emerald-400" : "bg-white/30")} />
+                          OpenAI
+                        </span>
 
-                  <span className="ml-auto flex items-center gap-1 text-[10px] text-white/25">
+                        <span
+                          onClick={() => void bridge.openDashboard()}
+                          className={cn(
+                            "flex items-center gap-1 rounded border px-1.5 py-0.5 cursor-pointer transition-colors",
+                            hasGeminiKey || hasOpenAIKey
+                              ? "border-emerald-500/30 bg-emerald-500/10 text-emerald-400"
+                              : "border-warn/40 bg-warn/10 text-warn hover:bg-warn/20"
+                          )}
+                          title={hasGeminiKey || hasOpenAIKey ? `Active Speech Engine: ${sttLabel}` : "No STT key configured. Click to open Settings."}
+                        >
+                          <Mic className={cn("h-2.5 w-2.5", hasGeminiKey || hasOpenAIKey ? "text-emerald-400" : "text-warn")} />
+                          {sttLabel}
+                        </span>
+
+                        <span
+                          className="flex items-center gap-1 rounded border border-white/10 bg-white/5 px-1.5 py-0.5 text-white/40"
+                          title="Local Voice Activity Detection runs 100% free on-device. Zero API cost while idle."
+                        >
+                          ⚡ Local VAD · $0.00
+                        </span>
+                      </div>
+                    );
+                  })()}
+
+                  <span className="ml-auto flex items-center gap-1 text-[10px] text-white/25 shrink-0">
                     <Command className="h-2.5 w-2.5" />
                     <span className="kbd">⌘⇧↵</span>
                   </span>
@@ -352,18 +569,53 @@ export function Overlay() {
                   </button>
                 </div>
               )}
+
+              <div className="mt-2 flex items-center justify-between border-t border-white/10 pt-1.5 no-drag font-mono text-[10px] text-white/50">
+                <div className="flex items-center gap-1.5 min-w-0">
+                  <Sun className="h-3 w-3 text-amber-400 shrink-0" />
+                  <span className="shrink-0 text-white/60">Transparency:</span>
+                  <input
+                    type="range"
+                    min="0.30"
+                    max="1.00"
+                    step="0.05"
+                    value={settings.stealth.opacity ?? 0.92}
+                    onChange={(e) =>
+                      void saveSettings({
+                        ...settings,
+                        stealth: { ...settings.stealth, opacity: parseFloat(e.target.value) },
+                      })
+                    }
+                    className="h-1.5 w-28 cursor-pointer accent-accent bg-white/20 rounded-lg appearance-none"
+                    title="Adjust window opacity (30% - 100%)"
+                  />
+                  <span className="w-8 text-right text-accent font-semibold">
+                    {Math.round((settings.stealth.opacity ?? 0.92) * 100)}%
+                  </span>
+                </div>
+              </div>
             </footer>
           </>
         )}
       </section>
 
       {answer && !streaming && (
-        <button
-          onClick={reset}
-          className="mx-auto mt-1 text-[10px] text-white/20 transition-colors hover:text-white/50"
-        >
-          new conversation
-        </button>
+        <div className="mx-auto mt-1 flex gap-3 text-[10px]">
+          <button
+            onClick={() => useStore.getState().clearScreen()}
+            className="text-white/40 transition-colors hover:text-white"
+            title="Clear active screen display but keep full question history"
+          >
+            clear screen (keep history)
+          </button>
+          <button
+            onClick={reset}
+            className="text-white/20 transition-colors hover:text-white/50"
+            title="Start new conversation"
+          >
+            new conversation
+          </button>
+        </div>
       )}
     </div>
   );
@@ -395,6 +647,8 @@ function ModeTab({
 }
 
 function EmptyState({ mode }: { mode: "ask" | "listen" }) {
+  const isMac = typeof navigator !== "undefined" && /Mac|iPod|iPhone|iPad/.test(navigator.platform);
+  const mod = isMac ? "⌘⇧" : "Ctrl+Shift+";
   return (
     <div className="flex h-full flex-col items-center justify-center gap-2 py-6 text-center">
       <p className="text-[12px] text-white/35">
@@ -403,9 +657,9 @@ function EmptyState({ mode }: { mode: "ask" | "listen" }) {
           : "Start listening and Nexus will follow the room."}
       </p>
       <div className="flex gap-1.5 text-[10px] text-white/25">
-        <span className="kbd">⌘⇧Space</span> toggle
-        <span className="kbd">⌘⇧S</span> capture
-        <span className="kbd">⌘⇧L</span> listen
+        <span className="kbd">{mod}Space</span> toggle
+        <span className="kbd">{mod}S</span> capture
+        <span className="kbd">{mod}L</span> listen
       </div>
     </div>
   );
@@ -418,39 +672,90 @@ function EmptyState({ mode }: { mode: "ask" | "listen" }) {
  */
 async function transcribe(wavBase64: string, language: string): Promise<string> {
   const settings = useStore.getState().settings;
-  const provider = settings.providers.find((p) => p.id === "openai" && p.enabled);
-
-  if (settings.routing.airgapped || !provider) {
-    // Local Whisper via the whisper.cpp server API.
-    const res = await fetch("http://127.0.0.1:8080/inference", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ audio: wavBase64, language }),
-    }).catch(() => null);
-    if (!res?.ok) return "";
-    const json = (await res.json()) as { text?: string };
-    return json.text?.trim() ?? "";
-  }
-
   const { bridge: b } = await import("@/lib/bridge");
-  const apiKey = provider.keyRef ? await b.resolveProviderKey(provider.keyRef) : null;
-  if (!apiKey) return "";
+  const sttEngine = settings.audio.sttEngine ?? "auto";
 
-  const binary = atob(wavBase64);
-  const bytes = new Uint8Array(binary.length);
-  for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i);
+  const tryGemini = async (): Promise<string> => {
+    const gemini = settings.providers.find((p) => p.id === "gemini" && p.enabled);
+    if (!gemini?.keyRef) return "";
+    const apiKey = await b.resolveProviderKey(gemini.keyRef).catch(() => null);
+    if (!apiKey) return "";
+    const candidateModels = Array.from(
+      new Set([gemini.models?.fast || "gemini-3.6-flash", "gemini-2.0-flash", "gemini-1.5-flash"])
+    );
+    for (const model of candidateModels) {
+      try {
+        const res = await fetch(
+          `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${apiKey}`,
+          {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              contents: [{
+                parts: [
+                  { text: "Transcribe the following spoken audio exactly as spoken. Output ONLY the verbatim transcript text with no commentary or preambles." },
+                  { inlineData: { mimeType: "audio/wav", data: wavBase64 } },
+                ],
+              }],
+            }),
+          },
+        );
+        if (res.ok) {
+          const json = (await res.json()) as { candidates?: Array<{ content?: { parts?: Array<{ text?: string }> } }> };
+          const text = json.candidates?.[0]?.content?.parts?.[0]?.text;
+          if (text?.trim()) return text.trim();
+        }
+      } catch { /* try next model */ }
+    }
+    return "";
+  };
 
-  const form = new FormData();
-  form.append("file", new Blob([bytes], { type: "audio/wav" }), "chunk.wav");
-  form.append("model", "whisper-1");
-  if (language !== "auto") form.append("language", language);
+  const tryOpenAI = async (): Promise<string> => {
+    const openai = settings.providers.find((p) => p.id === "openai" && p.enabled);
+    if (!openai?.keyRef) return "";
+    const apiKey = await b.resolveProviderKey(openai.keyRef).catch(() => null);
+    if (!apiKey) return "";
+    try {
+      const binary = atob(wavBase64);
+      const bytes = new Uint8Array(binary.length);
+      for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i);
+      const form = new FormData();
+      form.append("file", new Blob([bytes], { type: "audio/wav" }), "chunk.wav");
+      form.append("model", "whisper-1");
+      if (language !== "auto") form.append("language", language);
+      const res = await fetch("https://api.openai.com/v1/audio/transcriptions", {
+        method: "POST",
+        headers: { Authorization: `Bearer ${apiKey}` },
+        body: form,
+      });
+      if (res.ok) {
+        const json = (await res.json()) as { text?: string };
+        if (json.text?.trim()) return json.text.trim();
+      }
+    } catch { /* fall through */ }
+    return "";
+  };
 
-  const res = await fetch("https://api.openai.com/v1/audio/transcriptions", {
-    method: "POST",
-    headers: { Authorization: `Bearer ${apiKey}` },
-    body: form,
-  }).catch(() => null);
-  if (!res?.ok) return "";
-  const json = (await res.json()) as { text?: string };
-  return json.text?.trim() ?? "";
+  const tryLocal = async (): Promise<string> => {
+    try {
+      const res = await fetch("http://127.0.0.1:8080/inference", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ audio: wavBase64, language }),
+      });
+      if (res.ok) {
+        const json = (await res.json()) as { text?: string };
+        if (json.text?.trim()) return json.text.trim();
+      }
+    } catch { /* fall through */ }
+    return "";
+  };
+
+  // Route directly to the chosen engine, or cascade for "auto"
+  if (sttEngine === "gemini") return tryGemini();
+  if (sttEngine === "openai-whisper") return tryOpenAI();
+  if (sttEngine === "local-whisper") return tryLocal();
+
+  // auto: gemini → openai → local
+  return (await tryGemini()) || (await tryOpenAI()) || (await tryLocal());
 }

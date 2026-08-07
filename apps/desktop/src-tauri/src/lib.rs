@@ -21,16 +21,21 @@ pub struct AppState {
     pub shortcuts_enabled: AtomicBool,
 }
 
+#[cfg(target_os = "macos")]
+const PRIMARY_MOD: Modifiers = Modifiers::SUPER;
+#[cfg(not(target_os = "macos"))]
+const PRIMARY_MOD: Modifiers = Modifiers::CONTROL;
+
 /// Global hotkeys. These fire from inside any application, which is the whole
 /// point — reaching for the mouse during a live call is what gets people caught.
 const HOTKEYS: &[(&str, Modifiers, Code)] = &[
-    ("toggle-overlay", Modifiers::SUPER.union(Modifiers::SHIFT), Code::Space),
-    ("ask", Modifiers::SUPER.union(Modifiers::SHIFT), Code::KeyA),
-    ("listen", Modifiers::SUPER.union(Modifiers::SHIFT), Code::KeyL),
-    ("capture", Modifiers::SUPER.union(Modifiers::SHIFT), Code::KeyS),
-    ("region", Modifiers::SUPER.union(Modifiers::SHIFT).union(Modifiers::ALT), Code::KeyS),
-    ("suggest", Modifiers::SUPER.union(Modifiers::SHIFT), Code::Enter),
-    ("panic", Modifiers::SUPER.union(Modifiers::SHIFT), Code::Backslash),
+    ("toggle-overlay", PRIMARY_MOD.union(Modifiers::SHIFT), Code::Space),
+    ("ask", PRIMARY_MOD.union(Modifiers::SHIFT), Code::KeyA),
+    ("listen", PRIMARY_MOD.union(Modifiers::SHIFT), Code::KeyL),
+    ("capture", PRIMARY_MOD.union(Modifiers::SHIFT), Code::KeyS),
+    ("region", PRIMARY_MOD.union(Modifiers::SHIFT).union(Modifiers::ALT), Code::KeyS),
+    ("suggest", PRIMARY_MOD.union(Modifiers::SHIFT), Code::Enter),
+    ("panic", PRIMARY_MOD.union(Modifiers::SHIFT), Code::Backslash),
 ];
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
@@ -63,13 +68,14 @@ pub fn run() {
                 shortcuts_enabled: AtomicBool::new(true),
             });
 
-            // Stealth is applied at startup, before the window is ever shown, so
-            // there is no frame in which an unprotected overlay could be captured.
+            // Show and focus the main Overlay window on app launch
             if let Some(overlay) = app.get_webview_window("overlay") {
                 let cfg = stealth::StealthConfig::default();
                 if let Err(e) = stealth::apply(&overlay, &cfg) {
                     tracing::error!("failed to apply stealth: {e}");
                 }
+                let _ = overlay.show();
+                let _ = overlay.set_focus();
             }
 
             register_hotkeys(app.handle())?;
@@ -79,7 +85,9 @@ pub fn run() {
         .invoke_handler(tauri::generate_handler![
             commands::apply_stealth,
             commands::toggle_overlay,
+            commands::resize_overlay,
             commands::panic_hide,
+            commands::focus_overlay,
             commands::set_click_through,
             commands::open_dashboard,
             commands::list_audio_devices,
@@ -121,10 +129,15 @@ pub fn run() {
 fn register_hotkeys(app: &tauri::AppHandle) -> tauri::Result<()> {
     use tauri_plugin_global_shortcut::GlobalShortcutExt;
 
+    // Unregister any existing shortcuts (e.g. from previous dev hot reloads)
+    let _ = app.global_shortcut().unregister_all();
+
     let handle = app.clone();
     for (action, modifiers, code) in HOTKEYS {
         let shortcut = Shortcut::new(Some(*modifiers), *code);
-        let action = action.to_string();
+        let _ = app.global_shortcut().unregister(shortcut);
+        let action_str = action.to_string();
+        let action_for_err = action_str.clone();
         let handle = handle.clone();
 
         if let Err(e) = app.global_shortcut().on_shortcut(shortcut, move |_, _, event| {
@@ -136,7 +149,7 @@ fn register_hotkeys(app: &tauri::AppHandle) -> tauri::Result<()> {
                 return;
             }
 
-            match action.as_str() {
+            match action_str.as_str() {
                 "panic" => stealth::panic_hide(&handle),
                 "toggle-overlay" => {
                     if let Some(overlay) = handle.get_webview_window("overlay") {
@@ -151,9 +164,9 @@ fn register_hotkeys(app: &tauri::AppHandle) -> tauri::Result<()> {
                 }
             }
             // The UI decides what each action means; Rust only routes the signal.
-            let _ = handle.emit("nexus://hotkey", action.clone());
+            let _ = handle.emit("nexus://hotkey", action_str.clone());
         }) {
-            tracing::warn!("could not register hotkey for {action}: {e}");
+            tracing::warn!("could not register hotkey for {action_for_err}: {e}");
         }
     }
     Ok(())
@@ -162,7 +175,7 @@ fn register_hotkeys(app: &tauri::AppHandle) -> tauri::Result<()> {
 fn build_tray(app: &tauri::AppHandle) -> tauri::Result<()> {
     let toggle = MenuItem::with_id(app, "toggle", "Show / hide overlay", true, None::<&str>)?;
     let dashboard = MenuItem::with_id(app, "dashboard", "Open dashboard", true, None::<&str>)?;
-    let quit = MenuItem::with_id(app, "quit", "Quit Nexus Echo", true, None::<&str>)?;
+    let quit = MenuItem::with_id(app, "quit", "Quit Nexus-Echo-V2", true, None::<&str>)?;
     let menu = Menu::with_items(app, &[&toggle, &dashboard, &quit])?;
 
     TrayIconBuilder::with_id("nexus-tray")

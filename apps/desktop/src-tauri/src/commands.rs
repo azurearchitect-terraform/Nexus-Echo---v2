@@ -46,8 +46,28 @@ pub fn toggle_overlay(app: AppHandle) -> CmdResult<bool> {
 }
 
 #[tauri::command]
+pub fn resize_overlay(app: AppHandle, height: u32) -> CmdResult<()> {
+    let window = app
+        .get_webview_window("overlay")
+        .ok_or_else(|| "overlay window is not available".to_string())?;
+    let mut size = window.outer_size().map_err(err)?;
+    size.height = height;
+    window.set_size(size).map_err(err)?;
+    Ok(())
+}
+
+#[tauri::command]
 pub fn panic_hide(app: AppHandle) -> CmdResult<()> {
     stealth::panic_hide(&app);
+    Ok(())
+}
+
+#[tauri::command]
+pub fn focus_overlay(app: AppHandle) -> CmdResult<()> {
+    if let Some(window) = app.get_webview_window("overlay") {
+        let _ = window.show();
+        let _ = window.set_focus();
+    }
     Ok(())
 }
 
@@ -96,8 +116,8 @@ pub fn start_listening(
     if payload.vad_threshold < 0.0 || payload.vad_threshold > 1.0 {
         return Err("vadThreshold must be between 0 and 1".into());
     }
-    if state.capture.lock().is_some() {
-        return Err("a listening session is already running".into());
+    if let Some(prev) = state.capture.lock().take() {
+        prev.stop();
     }
 
     state.db.create_meeting(&payload.meeting_id, "Untitled meeting").map_err(err)?;
