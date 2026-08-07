@@ -1,0 +1,72 @@
+[package]
+name = "nexus-echo"
+version = "2.0.0"
+description = "Nexus Echo AI - private, stealth AI meeting assistant"
+authors = ["Nexus Echo"]
+edition = "2021"
+rust-version = "1.77"
+
+[lib]
+name = "nexus_echo_lib"
+crate-type = ["staticlib", "cdylib", "rlib"]
+
+[build-dependencies]
+tauri-build = { version = "2", features = [] }
+
+[dependencies]
+tauri = { version = "2", features = ["macos-private-api", "tray-icon", "image-png"] }
+tauri-plugin-global-shortcut = "2"
+tauri-plugin-dialog = "2"
+tauri-plugin-fs = "2"
+tauri-plugin-opener = "2"
+tauri-plugin-clipboard-manager = "2"
+tauri-plugin-notification = "2"
+
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+thiserror = "2"
+anyhow = "1"
+tokio = { version = "1", features = ["full"] }
+parking_lot = "0.12"
+uuid = { version = "1", features = ["v4", "serde"] }
+chrono = { version = "0.4", features = ["serde"] }
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter"] }
+
+# Storage
+rusqlite = { version = "0.32", features = ["bundled", "chrono"] }
+
+# Secrets - provider keys never touch the database or disk in plaintext
+keyring = { version = "3", features = ["apple-native", "windows-native", "sync-secret-service"] }
+
+# Audio capture: microphone and system loopback
+cpal = "0.15"
+rubato = "0.15"
+hound = "3.5"
+
+# Screen capture for vision mode
+xcap = "0.0.14"
+image = "0.25"
+base64 = "0.22"
+
+[target."cfg(target_os = \"macos\")".dependencies]
+cocoa = "0.26"
+objc = "0.2"
+
+[target."cfg(target_os = \"windows\")".dependencies]
+windows = { version = "0.58", features = [
+  "Win32_Foundation",
+  "Win32_UI_WindowsAndMessaging",
+  "Win32_Graphics_Gdi",
+] }
+
+[features]
+default = ["custom-protocol"]
+custom-protocol = ["tauri/custom-protocol"]
+
+[profile.release]
+codegen-units = 1
+lto = true
+opt-level = "s"
+panic = "abort"
+strip = true

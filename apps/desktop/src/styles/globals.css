@@ -1,0 +1,111 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  html,
+  body,
+  #root {
+    height: 100%;
+    margin: 0;
+    /* The overlay window is transparent; the panel itself paints the only surface.
+       Any opaque background here would defeat the glass effect entirely. */
+    background: transparent;
+    -webkit-font-smoothing: antialiased;
+    text-rendering: optimizeLegibility;
+    overscroll-behavior: none;
+  }
+
+  /* Text must never be selectable by an accidental drag during a call — a blue
+     selection highlight is exactly the kind of motion that draws a viewer's eye. */
+  .no-select {
+    user-select: none;
+    -webkit-user-select: none;
+  }
+
+  ::-webkit-scrollbar {
+    width: 6px;
+    height: 6px;
+  }
+  ::-webkit-scrollbar-thumb {
+    background: rgba(255, 255, 255, 0.16);
+    border-radius: 999px;
+  }
+  ::-webkit-scrollbar-track {
+    background: transparent;
+  }
+}
+
+@layer components {
+  .panel {
+    @apply rounded-2xl border border-glass-edge bg-glass backdrop-blur-2xl;
+    box-shadow:
+      0 24px 60px -12px rgba(0, 0, 0, 0.7),
+      inset 0 1px 0 0 rgba(255, 255, 255, 0.06);
+  }
+
+  .drag-region {
+    -webkit-app-region: drag;
+  }
+  .no-drag {
+    -webkit-app-region: no-drag;
+  }
+
+  .kbd {
+    @apply rounded border border-white/10 bg-white/[0.06] px-1.5 py-0.5 font-mono text-[10px] text-white/55;
+  }
+
+  .btn-ghost {
+    @apply rounded-lg p-2 text-white/60 transition-colors hover:bg-white/10 hover:text-white
+           focus-visible:outline focus-visible:outline-1 focus-visible:outline-accent;
+  }
+
+  /* Markdown answers rendered inside the overlay. Tight leading, because vertical
+     space is the scarcest resource in a 460px-tall floating window. */
+  .answer {
+    @apply text-[13.5px] leading-[1.55] text-white/90;
+  }
+  .answer > * + * {
+    @apply mt-2;
+  }
+  .answer strong {
+    @apply font-semibold text-white;
+  }
+  .answer code {
+    @apply rounded bg-white/10 px-1 py-0.5 font-mono text-[12px] text-accent;
+  }
+  .answer pre {
+    @apply overflow-x-auto rounded-lg border border-white/10 bg-black/50 p-3;
+  }
+  .answer pre code {
+    @apply bg-transparent p-0 text-white/85;
+  }
+  .answer ul {
+    @apply list-disc space-y-1 pl-4 marker:text-accent/70;
+  }
+  .answer ol {
+    @apply list-decimal space-y-1 pl-4 marker:text-white/40;
+  }
+  .answer a {
+    @apply text-accent underline underline-offset-2;
+  }
+  .answer blockquote {
+    @apply border-l-2 border-accent/40 pl-3 italic text-white/70;
+  }
+  .answer table {
+    @apply w-full border-collapse text-[12px];
+  }
+  .answer th,
+  .answer td {
+    @apply border border-white/10 px-2 py-1 text-left;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    transition-duration: 0.01ms !important;
+  }
+}

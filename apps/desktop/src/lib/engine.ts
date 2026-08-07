@@ -1,0 +1,258 @@
+import {
+  HybridRouter,
+  createGeminiProvider,
+  createOllamaProvider,
+  createOpenAIProvider,
+  askSystemPrompt,
+  listenSystemPrompt,
+  transcriptWindow,
+  MEETING_SUMMARY_PROMPT,
+  FOLLOWUP_PROMPT,
+} from "@nexus/ai";
+import { RagStore, packVector, unpackVector } from "@nexus/rag";
+import type {
+  AppSettings,
+  ProviderId,
+  RagHit,
+  StreamEvent,
+  TranscriptSegment,
+  Attachment,
+} from "@nexus/core";
+import { bridge } from "./bridge";
+
+/**
+ * Default model assignments. `fast` is what wins races, `deep` is the quality
+ * fallback, `vision` handles screenshots. These are overridable per provider in
+ * Settings; the names here are the sensible defaults, not hard-coded requirements.
+ */
+export const DEFAULT_MODELS: Record<ProviderId, { fast: string; deep: string; vision: string }> = {
+  gemini: { fast: "gemini-2.0-flash", deep: "gemini-2.5-pro", vision: "gemini-2.0-flash" },
+  openai: { fast: "gpt-4o-mini", deep: "gpt-4o", vision: "gpt-4o" },
+  ollama: { fast: "llama3.2:3b", deep: "llama3.1:8b", vision: "llama3.2-vision:11b" },
+  "azure-openai": { fast: "gpt-4o-mini", deep: "gpt-4o", vision: "gpt-4o" },
+  custom: { fast: "default", deep: "default", vision: "default" },
+};
+
+const EMBED_MODELS: Partial<Record<ProviderId, string>> = {
+  openai: "text-embedding-3-small",
+  gemini: "text-embedding-004",
+  ollama: "nomic-embed-text",
+};
+
+export class Engine {
+  readonly router = new HybridRouter();
+  rag: RagStore | null = null;
+  private settings: AppSettings | null = null;
+
+  /** Rebuilds providers from settings + keychain. Called on boot and on every save. */
+  async configure(settings: AppSettings): Promise<void> {
+    this.settings = settings;
+
+    for (const provider of settings.providers) {
+      if (!provider.enabled) continue;
+      const apiKey = provider.keyRef ? ((await bridge.resolveProviderKey(provider.keyRef)) ?? "") : "";
+      const creds = { apiKey, ...(provider.baseUrl ? { baseUrl: provider.baseUrl } : {}) };
+
+      switch (provider.id) {
+        case "openai":
+        case "azure-openai":
+          this.router.register(createOpenAIProvider(creds));
+          break;
+        case "gemini":
+          this.router.register(createGeminiProvider(creds));
+          break;
+        case "ollama":
+          this.router.register(createOllamaProvider(creds));
+          break;
+        default:
+          break;
+      }
+    }
+
+    if (settings.ragEnabled && !this.rag) {
+      await this.initRag(settings);
+    }
+  }
+
+  private async initRag(settings: AppSettings): Promise<void> {
+    // Embeddings prefer a local model when one is available — indexing a document
+    // library should not mean uploading the whole library to a vendor.
+    const embedProvider: ProviderId = settings.routing.airgapped
+      ? "ollama"
+      : settings.providers.find((p) => p.id === "ollama" && p.enabled)
+        ? "ollama"
+        : settings.routing.primary;
+
+    const model = EMBED_MODELS[embedProvider] ?? "text-embedding-3-small";
+
+    const embed = async (texts: string[]): Promise<number[][]> => {
+      const provider =
+        embedProvider === "gemini"
+          ? createGeminiProvider({ apiKey: await this.keyFor("gemini") })
+          : embedProvider === "ollama"
+            ? createOllamaProvider({ baseUrl: this.baseUrlFor("ollama") })
+            : createOpenAIProvider({ apiKey: await this.keyFor("openai") });
+      if (!provider.embed) throw new Error("provider does not support embeddings");
+      return provider.embed(texts, model);
+    };
+
+    this.rag = new RagStore(embed, {
+      saveChunks: async (chunks) => {
+        await bridge.saveChunks(
+          chunks.map((c) => ({
+            id: c.id,
+            docId: c.docId,
+            title: c.title,
+            text: c.text,
+            ordinal: c.ordinal,
+            vector: packVector(c.vector),
+          })),
+        );
+      },
+      loadChunks: async () => {
+        const rows = await bridge.loadChunks();
+        return rows.map((r) => ({
+          id: r.id,
+          docId: r.docId,
+          title: r.title,
+          text: r.text,
+          ordinal: r.ordinal,
+          vector: unpackVector(r.vector),
+        }));
+      },
+      deleteDocument: async (docId) => bridge.deleteDocument(docId),
+    });
+    await this.rag.init();
+  }
+
+  private async keyFor(id: ProviderId): Promise<string> {
+    const provider = this.settings?.providers.find((p) => p.id === id);
+    if (!provider?.keyRef) return "";
+    return (await bridge.resolveProviderKey(provider.keyRef)) ?? "";
+  }
+
+  private baseUrlFor(id: ProviderId): string | undefined {
+    return this.settings?.providers.find((p) => p.id === id)?.baseUrl;
+  }
+
+  private models(): Record<ProviderId, { fast: string; deep: string; vision: string }> {
+    const merged = { ...DEFAULT_MODELS };
+    for (const p of this.settings?.providers ?? []) {
+      const base = merged[p.id];
+      merged[p.id] = {
+        fast: p.models.fast ?? base.fast,
+        deep: p.models.deep ?? base.deep,
+        vision: p.models.vision ?? base.vision,
+      };
+    }
+    return merged;
+  }
+
+  async retrieve(query: string): Promise<RagHit[]> {
+    if (!this.settings?.ragEnabled || !this.rag) return [];
+    try {
+      return await this.rag.search(query, 4);
+    } catch {
+      // Retrieval is an enhancement. If the embedding endpoint is down, the answer
+      // should still arrive — degraded, not blocked.
+      return [];
+    }
+  }
+
+  /** Ask mode: a direct question, optionally with screenshots or documents attached. */
+  async *ask(
+    prompt: string,
+    history: Array<{ role: "user" | "assistant"; content: string }>,
+    attachments: Attachment[],
+    useRag: boolean,
+  ): AsyncGenerator<StreamEvent> {
+    if (!this.settings) throw new Error("engine is not configured");
+    const hits = useRag ? await this.retrieve(prompt) : [];
+
+    for (const hit of hits) {
+      yield { type: "citation", requestId: "pending", docId: hit.docId, title: hit.title, score: hit.score };
+    }
+
+    yield* this.router.run({
+      system: askSystemPrompt(this.settings.systemPrompt, hits),
+      messages: [...history, { role: "user", content: prompt }],
+      attachments,
+      policy: this.settings.routing,
+      models: this.models(),
+    });
+  }
+
+  /** Listen mode: generate what the user should say next, from the live transcript. */
+  async *suggest(segments: TranscriptSegment[]): AsyncGenerator<StreamEvent> {
+    if (!this.settings) throw new Error("engine is not configured");
+    const window = transcriptWindow(segments);
+    const lastQuestion = [...segments].reverse().find((s) => s.source === "system")?.text ?? window;
+    const hits = await this.retrieve(lastQuestion);
+
+    yield* this.router.run({
+      system: listenSystemPrompt(this.settings.systemPrompt, hits),
+      messages: [
+        {
+          role: "user",
+          content: `Live transcript:\n${window}\n\nThe user needs to respond now. Give them the words.`,
+        },
+      ],
+      policy: this.settings.routing,
+      models: this.models(),
+    });
+  }
+
+  private async collect(system: string, user: string): Promise<string> {
+    if (!this.settings) return "";
+    let out = "";
+    for await (const event of this.router.run({
+      system,
+      messages: [{ role: "user", content: user }],
+      policy: { ...this.settings.routing, mode: "single" },
+      models: this.models(),
+    })) {
+      if (event.type === "token") out += event.delta;
+    }
+    return out;
+  }
+
+  async summarizeMeeting(segments: TranscriptSegment[]): Promise<MeetingSummary> {
+    const raw = await this.collect(MEETING_SUMMARY_PROMPT, transcriptWindow(segments, 12000));
+    return parseJson<MeetingSummary>(raw, {
+      title: "Untitled meeting",
+      summary: "",
+      decisions: [],
+      actionItems: [],
+      openQuestions: [],
+      participants: [],
+    });
+  }
+
+  async followUps(segments: TranscriptSegment[]): Promise<string[]> {
+    const raw = await this.collect(FOLLOWUP_PROMPT, transcriptWindow(segments, 3000));
+    return parseJson<string[]>(raw, []).slice(0, 3);
+  }
+}
+
+export interface MeetingSummary {
+  title: string;
+  summary: string;
+  decisions: string[];
+  actionItems: Array<{ text: string; owner: string | null; due: string | null }>;
+  openQuestions: string[];
+  participants: string[];
+}
+
+/** Models fence JSON in markdown often enough that stripping it is mandatory. */
+function parseJson<T>(raw: string, fallback: T): T {
+  const cleaned = raw.trim().replace(/^```(?:json)?\s*/i, "").replace(/```\s*$/, "");
+  const start = cleaned.search(/[[{]/);
+  if (start === -1) return fallback;
+  try {
+    return JSON.parse(cleaned.slice(start)) as T;
+  } catch {
+    return fallback;
+  }
+}
+
+export const engine = new Engine();

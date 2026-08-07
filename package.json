@@ -1,0 +1,31 @@
+{
+  "name": "nexus-echo-ai",
+  "version": "2.0.0",
+  "private": true,
+  "packageManager": "pnpm@9.12.0",
+  "engines": { "node": ">=22.0.0", "pnpm": ">=9.0.0" },
+  "scripts": {
+    "dev": "turbo run dev --parallel",
+    "build": "turbo run build",
+    "tauri": "pnpm --filter @nexus/desktop tauri",
+    "app:dev": "pnpm --filter @nexus/desktop tauri dev",
+    "app:build": "pnpm --filter @nexus/desktop tauri build",
+    "lint": "turbo run lint",
+    "test": "turbo run test",
+    "typecheck": "turbo run typecheck",
+    "format": "prettier --write \"**/*.{ts,tsx,json,md,css}\"",
+    "prepare": "husky"
+  },
+  "devDependencies": {
+    "@types/node": "^22.9.0",
+    "eslint": "^9.14.0",
+    "husky": "^9.1.6",
+    "lint-staged": "^15.2.10",
+    "prettier": "^3.3.3",
+    "turbo": "^2.2.3",
+    "typescript": "^5.6.3",
+    "typescript-eslint": "^8.13.0",
+    "vitest": "^2.1.4"
+  },
+  "lint-staged": { "*.{ts,tsx}": ["eslint --fix", "prettier --write"] }
+}
