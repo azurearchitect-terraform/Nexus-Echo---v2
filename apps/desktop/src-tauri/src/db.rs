@@ -240,6 +240,10 @@ impl Db {
         let tx = conn.transaction()?;
         for c in chunks {
             tx.execute(
+                "INSERT OR IGNORE INTO documents(id, title, path, mime_type, indexed_at) VALUES(?1, ?2, '', '', ?3)",
+                params![c.doc_id, c.title, chrono::Utc::now().timestamp_millis()],
+            )?;
+            tx.execute(
                 "INSERT INTO chunks(id, doc_id, title, text, ordinal, vector) VALUES(?1,?2,?3,?4,?5,?6)
                  ON CONFLICT(id) DO UPDATE SET text = excluded.text, vector = excluded.vector",
                 params![c.id, c.doc_id, c.title, c.text, c.ordinal, c.vector],
