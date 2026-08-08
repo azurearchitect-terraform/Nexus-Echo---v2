@@ -9,6 +9,7 @@ import {
   MEETING_SUMMARY_PROMPT,
   FOLLOWUP_PROMPT,
   detectPersona,
+  isPersonalQuestion,
 } from "@nexus/ai";
 import { RagStore, packVector, unpackVector } from "@nexus/rag";
 import type {
@@ -174,8 +175,8 @@ export class Engine {
     useRag: boolean,
   ): AsyncGenerator<StreamEvent> {
     if (!this.settings) throw new Error("engine is not configured");
-    const isBehavioral = detectPersona(prompt) === "Behavioral & Leadership";
-    const hits = (useRag && isBehavioral) ? await this.retrieve(prompt) : [];
+    const isPersonal = isPersonalQuestion(prompt);
+    const hits = (useRag && isPersonal) ? await this.retrieve(prompt) : [];
 
     for (const hit of hits) {
       yield { type: "citation", requestId: "pending", docId: hit.docId, title: hit.title, score: hit.score };
@@ -195,8 +196,8 @@ export class Engine {
     if (!this.settings) throw new Error("engine is not configured");
     const window = segments.length ? transcriptWindow(segments) : "The user is in a live conversation and needs a quick, direct, and relevant response.";
     const lastQuestion = [...segments].reverse().find((s) => s.source === "system")?.text ?? window;
-    const isBehavioral = detectPersona(lastQuestion) === "Behavioral & Leadership";
-    const hits = (this.settings.ragEnabled && isBehavioral) ? await this.retrieve(lastQuestion) : [];
+    const isPersonal = isPersonalQuestion(lastQuestion);
+    const hits = (this.settings.ragEnabled && isPersonal) ? await this.retrieve(lastQuestion) : [];
 
     yield* this.router.run({
       system: listenSystemPrompt(this.settings.systemPrompt, hits),

@@ -41,6 +41,17 @@ export function detectPersona(text: string): string {
   return "Technical Specialist";
 }
 
+/**
+ * Detects whether a question is personal/behavioral and should trigger
+ * RAG retrieval of the user's Resume, CV, or JD. This is deliberately
+ * broad — a false positive just adds context, a false negative means
+ * the user gets a generic answer when they needed a personalized one.
+ */
+export function isPersonalQuestion(text: string): boolean {
+  const lower = text.toLowerCase();
+  return /tell me about yourself|introduce yourself|about yourself|walk me through your|your background|your experience|your resume|your cv|your profile|previous (role|company|org|job|position)|last (role|company|org|job|position)|why should we hire|why are you a good fit|what makes you|your strengths|your weaknesses|your achievements|your accomplishments|what did you do|where did you work|where have you worked|your career|about you|describe yourself|who are you|what do you bring|your skills|your expertise|your qualifications|your education|years of experience|current role|current company|current job|your projects|worked on|your contribution|why this role|why do you want|motivation for|interested in this|fit for this|suitable for|your salary|your expectations|why are you leaving|why did you leave|what are you looking for|your hobbies|your interests|something about you|brief about you|summary about you|overview about you|professional summary|career summary/.test(lower);
+}
+
 export function askSystemPrompt(userSystemPrompt: string, hits: RagHit[]): string {
   const knowledge = hits.length
     ? `\n\nRETRIEVED CONTEXT — cite by [title] when you use one of these; ignore any that are irrelevant rather than forcing them in:\n${hits

@@ -19,10 +19,32 @@ export function KnowledgePanel() {
   const [docs, setDocs] = useState<DocRow[]>([]);
   const [busy, setBusy] = useState<string | null>(null);
   const [progress, setProgress] = useState(0);
+  const [ragReady, setRagReady] = useState(!!engine.rag);
 
+  // Poll for engine.rag to be initialized (it's async and may not be ready on mount)
   useEffect(() => {
-    if (!engine.rag) return;
-    setDocs(engine.rag.listDocuments());
+    if (engine.rag) {
+      setRagReady(true);
+      setDocs(engine.rag.listDocuments());
+      return;
+    }
+
+    let attempts = 0;
+    const maxAttempts = 20; // 20 x 500ms = 10 seconds
+    const timer = setInterval(() => {
+      attempts++;
+      if (engine.rag) {
+        clearInterval(timer);
+        setRagReady(true);
+        setDocs(engine.rag.listDocuments());
+      } else if (attempts >= maxAttempts) {
+        clearInterval(timer);
+        console.warn("KnowledgePanel: RAG engine did not initialize within 10s");
+        setRagReady(true); // stop showing spinner, allow manual adds
+      }
+    }, 500);
+
+    return () => clearInterval(timer);
   }, []);
 
   const addFiles = async () => {
@@ -102,12 +124,19 @@ export function KnowledgePanel() {
         </div>
         <button
           onClick={() => void addFiles()}
-          disabled={!!busy}
+          disabled={!!busy || !ragReady}
           className="flex shrink-0 items-center gap-1.5 rounded-lg bg-accent/15 px-3 py-1.5 text-[12px] font-medium text-accent hover:bg-accent/25 disabled:opacity-40"
         >
           <Plus className="h-3.5 w-3.5" /> Add files
         </button>
       </header>
+
+      {!ragReady && (
+        <div className="flex items-center gap-2.5 rounded-xl border border-white/10 bg-white/[0.03] p-3">
+          <Loader2 className="h-4 w-4 animate-spin text-accent" />
+          <p className="text-[12.5px] text-white/50">Initializing Knowledge Engine…</p>
+        </div>
+      )}
 
       {busy && (
         <div className="flex items-center gap-2.5 rounded-xl border border-white/10 bg-white/[0.03] p-3">
