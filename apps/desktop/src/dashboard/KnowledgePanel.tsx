@@ -97,7 +97,7 @@ export function KnowledgePanel() {
           <h2 className="text-lg font-semibold">Knowledge</h2>
           <p className="text-[13px] text-white/40">
             Indexed documents are searched on every question and cited in the answer. 
-            Embeddings run locally when Ollama is selected as your primary AI, otherwise they use your active cloud provider.
+            Embeddings run securely using your currently active AI provider (like Gemini or OpenAI).
           </p>
         </div>
         <button
