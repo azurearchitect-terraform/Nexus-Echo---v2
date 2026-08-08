@@ -156,13 +156,20 @@ export class Engine {
   }
 
   async retrieve(query: string): Promise<RagHit[]> {
-    if (!this.settings?.ragEnabled || !this.rag) return [];
+    if (!this.settings?.ragEnabled || !this.rag) {
+      console.debug("[RAG] Skipped: ragEnabled=", this.settings?.ragEnabled, "rag=", !!this.rag);
+      return [];
+    }
+    console.debug("[RAG] Searching for:", query, "| Total chunks loaded:", this.rag.chunkCount);
     try {
-      return await Promise.race([
+      const hits = await Promise.race([
         this.rag.search(query, 4),
         new Promise<RagHit[]>((resolve) => setTimeout(() => resolve([]), 2000)),
       ]);
-    } catch {
+      console.debug("[RAG] Hits found:", hits.length, hits.map(h => h.title + " score=" + h.score.toFixed(2)));
+      return hits;
+    } catch (e) {
+      console.error("[RAG] Search failed:", e);
       return [];
     }
   }
@@ -176,6 +183,7 @@ export class Engine {
   ): AsyncGenerator<StreamEvent> {
     if (!this.settings) throw new Error("engine is not configured");
     const isPersonal = isPersonalQuestion(prompt);
+    console.debug("[RAG] isPersonalQuestion:", isPersonal, "| prompt:", prompt);
     const hits = (useRag && isPersonal) ? await this.retrieve(prompt) : [];
 
     for (const hit of hits) {
