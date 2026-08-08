@@ -3,7 +3,7 @@ import { readNDJSON } from "../sse";
 
 /** Fully local. Selected automatically whenever routing mode is `offline` or airgapped is on. */
 export function createOllamaProvider(creds: ProviderCredentials): Provider {
-  const base = creds.baseUrl ?? "http://127.0.0.1:11434";
+  const base = (creds.baseUrl ?? "http://127.0.0.1:11434").replace(/\/+$/, "");
 
   return {
     id: "ollama",

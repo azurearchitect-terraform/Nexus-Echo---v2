@@ -2,7 +2,7 @@ import type { Provider, GenerateOptions, ProviderCredentials, TokenChunk } from 
 import { readSSE } from "../sse";
 
 export function createOpenAIProvider(creds: ProviderCredentials): Provider {
-  const base = creds.baseUrl ?? "https://api.openai.com/v1";
+  const base = (creds.baseUrl ?? "https://api.openai.com/v1").replace(/\/+$/, "");
   const headers = () => ({
     "Content-Type": "application/json",
     Authorization: `Bearer ${creds.apiKey ?? ""}`,

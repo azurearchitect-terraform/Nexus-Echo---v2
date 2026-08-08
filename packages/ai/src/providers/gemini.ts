@@ -6,7 +6,7 @@ import { readSSE } from "../sse";
  * produces first token fastest, which is what makes the overlay feel instant.
  */
 export function createGeminiProvider(creds: ProviderCredentials): Provider {
-  const base = creds.baseUrl ?? "https://generativelanguage.googleapis.com/v1beta";
+  const base = (creds.baseUrl ?? "https://generativelanguage.googleapis.com/v1beta").replace(/\/+$/, "");
 
   return {
     id: "gemini",
