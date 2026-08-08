@@ -86,9 +86,7 @@ export class Engine {
     // library should not mean uploading the whole library to a vendor.
     const embedProvider: ProviderId = settings.routing.airgapped
       ? "ollama"
-      : settings.providers.find((p) => p.id === "ollama" && p.enabled)
-        ? "ollama"
-        : settings.routing.primary;
+      : settings.routing.primary;
 
     const model = EMBED_MODELS[embedProvider] ?? "text-embedding-3-small";
 
