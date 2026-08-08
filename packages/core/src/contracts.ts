@@ -66,7 +66,7 @@ export const StealthConfig = z.object({
 export type StealthConfig = z.infer<typeof StealthConfig>;
 
 export const AudioConfig = z.object({
-  captureMicrophone: z.boolean().default(true),
+  captureMicrophone: z.boolean().default(false),
   captureSystemAudio: z.boolean().default(true),
   micDeviceId: z.string().optional(),
   systemDeviceId: z.string().optional(),

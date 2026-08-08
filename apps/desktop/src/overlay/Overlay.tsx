@@ -15,6 +15,9 @@ import {
   Loader2,
   MessageSquare,
   Mic,
+  MicOff,
+  Volume2,
+  VolumeX,
   Paperclip,
   Send,
   Sparkles,
@@ -239,12 +242,43 @@ export function Overlay() {
               <option value="offline" className="bg-neutral-900 text-white font-mono text-[11px] py-1">🔒 Offline (Ollama)</option>
             </select>
 
-            {listening && (
-              <div className="flex items-center gap-1.5 border-l border-white/10 pl-2">
-                <Waveform active={speakingMic} tone="mic" />
-                <Waveform active={speakingSystem} tone="system" />
-              </div>
-            )}
+            <div className="flex items-center gap-1.5 border-l border-white/10 pl-2 no-drag">
+              <button
+                onClick={async () => {
+                  const newSettings = { ...settings, audio: { ...settings.audio, captureMicrophone: !settings.audio.captureMicrophone } };
+                  await saveSettings(newSettings);
+                  if (listening) {
+                    await stopListening();
+                    await startListening();
+                  }
+                }}
+                className={`flex items-center gap-1.5 rounded-md px-1.5 py-1 text-[11px] transition-colors ${
+                  settings.audio.captureMicrophone ? "bg-accent/20 text-accent hover:bg-accent/30" : "bg-neutral-800 text-white/40 hover:bg-neutral-700"
+                }`}
+                title="Toggle Microphone (Your Voice)"
+              >
+                {settings.audio.captureMicrophone ? <Mic className="h-3 w-3" /> : <MicOff className="h-3 w-3" />}
+                {listening && settings.audio.captureMicrophone && <Waveform active={speakingMic} tone="mic" />}
+              </button>
+
+              <button
+                onClick={async () => {
+                  const newSettings = { ...settings, audio: { ...settings.audio, captureSystemAudio: !settings.audio.captureSystemAudio } };
+                  await saveSettings(newSettings);
+                  if (listening) {
+                    await stopListening();
+                    await startListening();
+                  }
+                }}
+                className={`flex items-center gap-1.5 rounded-md px-1.5 py-1 text-[11px] transition-colors ${
+                  settings.audio.captureSystemAudio ? "bg-blue-500/20 text-blue-400 hover:bg-blue-500/30" : "bg-neutral-800 text-white/40 hover:bg-neutral-700"
+                }`}
+                title="Toggle System Audio (Meeting Audio)"
+              >
+                {settings.audio.captureSystemAudio ? <Volume2 className="h-3 w-3" /> : <VolumeX className="h-3 w-3" />}
+                {listening && settings.audio.captureSystemAudio && <Waveform active={speakingSystem} tone="system" />}
+              </button>
+            </div>
 
             {useStore.getState().detectedPersona && (
               <span
