@@ -49,19 +49,20 @@ export function KnowledgePanel() {
   }, []);
 
   const addFiles = async () => {
-    const selected = await open({
-      multiple: true,
-      filters: [{ name: "Documents", extensions: ["txt", "md", "markdown", "json", "csv", "log", "pdf"] }],
-    });
-    if (!selected) return;
-    const paths = Array.isArray(selected) ? selected : [selected];
+    try {
+      const selected = await open({
+        multiple: true,
+        filters: [{ name: "Documents", extensions: ["txt", "md", "markdown", "json", "csv", "log", "pdf"] }],
+      });
+      if (!selected) return;
+      const paths = Array.isArray(selected) ? selected : [selected];
 
-    for (const path of paths) {
-      const title = path.split(/[/\\]/).pop() ?? path;
-      const ext = title.split('.').pop()?.toLowerCase();
-      setBusy(title);
-      setError(null);
-      setProgress(0);
+      for (const path of paths) {
+        const title = path.split(/[/\\]/).pop() ?? path;
+        const ext = title.split('.').pop()?.toLowerCase();
+        setBusy(title);
+        setError(null);
+        setProgress(0);
       try {
         let text = "";
 
@@ -100,13 +101,17 @@ export function KnowledgePanel() {
         const chunks = await engine.rag!.addDocument(docId, title, text, (done, total) =>
           setProgress(Math.round((done / total) * 100)),
         );
-        setDocs((d) => [...d, { id: docId, title, chunks }]);
-      } catch (e: any) {
-        console.error("indexing failed", e);
-        setError(e.message || String(e));
-      } finally {
-        setBusy(null);
+          setDocs((d) => [...d, { id: docId, title, chunks }]);
+        } catch (e: any) {
+          console.error("indexing failed", e);
+          setError(e.message || String(e));
+        } finally {
+          setBusy(null);
+        }
       }
+    } catch (e: any) {
+      console.error("dialog failed", e);
+      setError("Failed to open file picker: " + (e.message || String(e)));
     }
   };
 
