@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
 import { open } from "@tauri-apps/plugin-dialog";
 import { readFile, readTextFile } from "@tauri-apps/plugin-fs";
-import { FileText, Loader2, Plus, Trash2 } from "lucide-react";
+import { FileText, Loader2, Plus, Trash2, AlertCircle } from "lucide-react";
 import { engine } from "@/lib/engine";
 import { uid } from "@nexus/core";
 import * as pdfjsLib from "pdfjs-dist";
@@ -18,6 +18,7 @@ interface DocRow {
 export function KnowledgePanel() {
   const [docs, setDocs] = useState<DocRow[]>([]);
   const [busy, setBusy] = useState<string | null>(null);
+  const [error, setError] = useState<string | null>(null);
   const [progress, setProgress] = useState(0);
   const [ragReady, setRagReady] = useState(!!engine.rag);
 
@@ -59,6 +60,7 @@ export function KnowledgePanel() {
       const title = path.split(/[/\\]/).pop() ?? path;
       const ext = title.split('.').pop()?.toLowerCase();
       setBusy(title);
+      setError(null);
       setProgress(0);
       try {
         let text = "";
@@ -99,8 +101,9 @@ export function KnowledgePanel() {
           setProgress(Math.round((done / total) * 100)),
         );
         setDocs((d) => [...d, { id: docId, title, chunks }]);
-      } catch (e) {
+      } catch (e: any) {
         console.error("indexing failed", e);
+        setError(e.message || String(e));
       } finally {
         setBusy(null);
       }
@@ -135,6 +138,13 @@ export function KnowledgePanel() {
         <div className="flex items-center gap-2.5 rounded-xl border border-white/10 bg-white/[0.03] p-3">
           <Loader2 className="h-4 w-4 animate-spin text-accent" />
           <p className="text-[12.5px] text-white/50">Initializing Knowledge Engine…</p>
+        </div>
+      )}
+
+      {error && (
+        <div className="flex items-center gap-2.5 rounded-xl border border-danger/20 bg-danger/5 p-3 text-danger">
+          <AlertCircle className="h-4 w-4 shrink-0" />
+          <p className="text-[12.5px]">{error}</p>
         </div>
       )}
 
