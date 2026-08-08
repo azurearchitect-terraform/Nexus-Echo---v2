@@ -67,7 +67,11 @@ export function createGeminiProvider(creds: ProviderCredentials): Provider {
           requests: texts.map((t) => ({ model: `models/${model}`, content: { parts: [{ text: t }] } })),
         }),
       });
-      if (!res.ok) throw new Error(`embedding failed: ${res.status}`);
+      if (!res.ok) {
+        let detail = res.statusText;
+        try { const j = await res.json(); detail = j?.error?.message ?? detail; } catch { /* ignore */ }
+        throw new Error(`Gemini embedding failed (${res.status}): ${detail}`);
+      }
       const json = (await res.json()) as { embeddings: Array<{ values: number[] }> };
       return json.embeddings.map((e) => e.values);
     },

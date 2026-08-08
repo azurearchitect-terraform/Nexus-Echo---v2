@@ -5,9 +5,10 @@ import { FileText, Loader2, Plus, Trash2, AlertCircle } from "lucide-react";
 import { engine } from "@/lib/engine";
 import { uid } from "@nexus/core";
 import * as pdfjsLib from "pdfjs-dist";
+import pdfWorkerUrl from "pdfjs-dist/build/pdf.worker.min.mjs?url";
 
-// Use CDN for worker to avoid complex bundler configurations with Vite + Tauri
-pdfjsLib.GlobalWorkerOptions.workerSrc = `https://cdnjs.cloudflare.com/ajax/libs/pdf.js/${pdfjsLib.version}/pdf.worker.min.mjs`;
+// Use local bundled worker — CDN is unreliable across pdfjs versions
+pdfjsLib.GlobalWorkerOptions.workerSrc = pdfWorkerUrl;
 
 interface DocRow {
   id: string;

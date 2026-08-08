@@ -37,7 +37,7 @@ export const DEFAULT_MODELS: Record<ProviderId, { fast: string; deep: string; vi
 
 const EMBED_MODELS: Partial<Record<ProviderId, string>> = {
   openai: "text-embedding-3-small",
-  gemini: "text-embedding-004",
+  gemini: "gemini-embedding-001",
   ollama: "nomic-embed-text",
 };
 
