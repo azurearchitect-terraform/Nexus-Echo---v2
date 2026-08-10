@@ -2,7 +2,7 @@ import { create } from "zustand";
 import { detectPersona } from "@nexus/ai";
 import { AppSettings, uid, type Attachment, type TranscriptSegment, type ProviderId, type CompanyIntel } from "@nexus/core";
 import { bridge } from "./bridge";
-import { engine } from "./engine";
+import { engine, verifyAzureSpecs } from "./engine";
 import { emit, listen } from "@tauri-apps/api/event";
 
 export type Mode = "ask" | "listen" | "intel";
@@ -18,6 +18,7 @@ export interface Answer {
   latencyMs?: number;
   swapped?: boolean;
   citations: Array<{ docId: string; title: string; score: number }>;
+  verifiedSpec?: { isVerified: boolean; terms: string[] };
   error?: string;
 }
 
@@ -288,7 +289,8 @@ export const useStore = create<AppStore>((set, get) => ({
 
       const final = get().answer;
       if (final?.text) {
-        const fullAnswer = { ...final, question: prompt, persona };
+        const verifiedSpec = verifyAzureSpecs(final.text);
+        const fullAnswer = { ...final, question: prompt, persona, verifiedSpec };
         set((s) => ({
           answersList: [...s.answersList.filter((a) => a.id !== final.id), fullAnswer],
           history: [...s.history, { role: "assistant", content: final.text }],
@@ -351,6 +353,7 @@ export const useStore = create<AppStore>((set, get) => ({
         actionItems: JSON.stringify(summary.actionItems),
         participants: JSON.stringify(summary.participants),
       });
+      void emit("nexus://meeting-finalized", { meetingId, summary });
     }
     set({ meetingId: null });
   },
@@ -429,8 +432,10 @@ export const useStore = create<AppStore>((set, get) => ({
       }
       const final = get().answer;
       if (final?.text) {
+        const verifiedSpec = verifyAzureSpecs(final.text);
+        const verifiedAnswer = { ...final, verifiedSpec };
         set((s) => ({
-          answersList: [...s.answersList.filter((a) => a.id !== final.id), final],
+          answersList: [...s.answersList.filter((a) => a.id !== final.id), verifiedAnswer],
         }));
       }
       // Follow-up generation disabled for clean UI

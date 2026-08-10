@@ -2,30 +2,59 @@ import { useEffect, useState } from "react";
 import { CheckSquare, Search, Sparkles } from "lucide-react";
 import { bridge, type SearchHit } from "@/lib/bridge";
 import { useStore } from "@/lib/store";
+import { listen } from "@tauri-apps/api/event";
 
 export function MeetingsPanel() {
   const [query, setQuery] = useState("");
   const [hits, setHits] = useState<SearchHit[]>([]);
   const { segments } = useStore();
+  const [latestReport, setLatestReport] = useState<{ meetingId: string; summary: any } | null>(null);
 
   useEffect(() => {
-    if (!query.trim()) {
-      setHits([]);
-      return;
-    }
-    // Debounced so FTS is not re-run on every keystroke of a long query.
-    const timer = setTimeout(() => void bridge.searchEverything(query).then(setHits), 220);
-    return () => clearTimeout(timer);
-  }, [query]);
+    const unlisten = listen<{ meetingId: string; summary: any }>("nexus://meeting-finalized", (event) => {
+      setLatestReport(event.payload);
+    });
+    return () => {
+      void unlisten.then((fn) => fn());
+    };
+  }, []);
 
   return (
     <section className="space-y-6">
       <header>
-        <h2 className="text-lg font-semibold">Meetings & chats</h2>
+        <h2 className="text-lg font-semibold">Meetings & Debrief Reports</h2>
         <p className="text-[13px] text-white/40">
-          Full-text search across every transcript, answer, and summary stored on this machine.
+          Full-text search across every transcript, answer, and post-interview debrief stored on this machine.
         </p>
       </header>
+
+      {latestReport && (
+        <div className="rounded-xl border border-accent/30 bg-accent/[0.08] p-5 space-y-3 animate-fade-up">
+          <div className="flex items-center justify-between">
+            <h3 className="flex items-center gap-2 text-sm font-semibold text-accent">
+              <Sparkles className="h-4 w-4" /> Post-Interview Performance Debrief
+            </h3>
+            <span className="rounded bg-accent/20 px-2 py-0.5 text-[10px] font-mono text-accent">
+              {latestReport.summary.title}
+            </span>
+          </div>
+
+          <p className="text-[12.5px] leading-relaxed text-white/80">
+            {latestReport.summary.summary}
+          </p>
+
+          {latestReport.summary.decisions && latestReport.summary.decisions.length > 0 && (
+            <div className="space-y-1">
+              <span className="text-[11px] font-mono uppercase tracking-wider text-white/40">Key Topics & Takeaways:</span>
+              <ul className="list-disc list-inside text-[12px] text-white/70 space-y-0.5">
+                {latestReport.summary.decisions.map((d: string, idx: number) => (
+                  <li key={idx}>{d}</li>
+                ))}
+              </ul>
+            </div>
+          )}
+        </div>
+      )}
 
       <div className="relative">
         <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-white/25" />

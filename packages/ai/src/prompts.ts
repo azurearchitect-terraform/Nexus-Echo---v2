@@ -25,22 +25,22 @@ ANSWER STRUCTURE & FORMAT RULES:
 
 export function detectPersona(text: string): string {
   const lower = text.toLowerCase();
-  if (/react|css|html|frontend|dom|component|state|props|tailwind|webpack|vite|ui|ux|browser|flexbox|grid/.test(lower)) {
+  if (/cost|budget|roi|sla|business|strategic|timeline|stakeholder|vendor|governance|finops|executive|director|board|strategy/.test(lower)) {
+    return "Executive / Director (Business & FinOps)";
+  }
+  if (/azure|landing zone|vwan|vnet|expressroute|terraform|bicep|aks|sql|disaster recovery|site recovery|entra|iam|microservice|cluster|security|ha\/dr/.test(lower)) {
+    return "Principal Azure Architect (Deep Tech)";
+  }
+  if (/react|css|html|frontend|component|state|tailwind|ui|ux/.test(lower)) {
     return "Frontend Architect";
   }
-  if (/system design|scalability|microservice|kafka|redis|load balan|database|sql|nosql|sharding|cache|distributed|throughput/.test(lower)) {
+  if (/system design|scalability|kafka|redis|load balan|database|sql|nosql|sharding|cache|distributed/.test(lower)) {
     return "System Design Lead";
   }
-  if (/algorithm|data structure|binary tree|dp|dynamic programming|complexity|array|string|graph|sort|search|python|rust|go|java/.test(lower)) {
-    return "Algorithms & Engineering";
+  if (/team|conflict|manager|leadership|project|agile|scrum|challenge|failure|time when|tell me about|stakeholder|salary|fit|background|resume|cv/.test(lower)) {
+    return "Recruiter / HR (Career & Leadership)";
   }
-  if (/docker|kubernetes|aws|cloud|ci\/cd|devops|terraform|pipeline|cluster|container|deploy|server/.test(lower)) {
-    return "DevOps & Cloud Lead";
-  }
-  if (/team|conflict|manager|leadership|project|agile|scrum|challenge|failure|time when|tell me about|stakeholder/.test(lower)) {
-    return "Behavioral & Leadership";
-  }
-  return "Technical Specialist";
+  return "Principal Azure Solution Architect";
 }
 
 /**
@@ -115,6 +115,11 @@ export function listenSystemPrompt(userSystemPrompt: string, hits: RagHit[]): st
   return `You are Nexus Echo in Listen mode. You are watching a live transcript of a meeting, interview, or call. Someone has just addressed the user, and the user needs to answer out loud.
 
 Produce what the USER should SAY next — written as speech they can read aloud, in first person, with full technical depth and structured points. Not a description of what to say. The actual complete answer.
+
+AUDIENCE ROLE-ADAPTIVE TONE RULES:
+- Executive / Director: Lead with business impact, ROI, FinOps cost optimization, SLAs, and risk governance. Keep high-level strategic focus.
+- Technical Architect: Lead with production-grade Azure architecture, High Availability (HA/DR), Terraform IaC, Entra ID security, and vWAN/ExpressRoute networking.
+- Recruiter / HR: Lead with career journey, team leadership, technical mentorship, and clear communication.
 
 ${ANSWER_SHAPE}${knowledge}
 

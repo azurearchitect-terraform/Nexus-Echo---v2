@@ -493,4 +493,53 @@ function parseStructuredJson<T>(raw: string, fallback: T): T {
   return parsed as T;
 }
 
+export interface AzureFactVerification {
+  isVerified: boolean;
+  terms: string[];
+}
+
+export function verifyAzureSpecs(text: string): AzureFactVerification {
+  if (!text || text.length < 20) {
+    return { isVerified: false, terms: [] };
+  }
+
+  const terms: string[] = [];
+  const lower = text.toLowerCase();
+
+  // SLAs
+  if (/99\.999%|99\.99%|99\.95%|99\.9%/.test(text)) {
+    const match = text.match(/99\.\d+%/);
+    if (match) terms.push(`SLA ${match[0]}`);
+  }
+
+  // Azure CLI
+  if (/az\s+(group|aks|network|vm|sql|storage|webapp|policy|keyvault)/.test(lower)) {
+    const match = text.match(/az\s+[a-z]+/i);
+    if (match) terms.push(match[0].toLowerCase());
+  }
+
+  // Terraform azurerm resources
+  if (/azurerm_[a-z0-9_]+/.test(lower)) {
+    const match = text.match(/azurerm_[a-z0-9_]+/i);
+    if (match) terms.push(match[0]);
+  }
+
+  // Core Azure Solutions & Architecture Specs
+  if (lower.includes("landing zone")) terms.push("Azure Landing Zone");
+  if (lower.includes("entra id") || lower.includes("azure ad")) terms.push("Entra ID");
+  if (lower.includes("expressroute")) terms.push("ExpressRoute");
+  if (lower.includes("virtual wan") || lower.includes("vwan")) terms.push("Virtual WAN");
+  if (lower.includes("sql managed instance")) terms.push("SQL Managed Instance");
+  if (lower.includes("front door")) terms.push("Azure Front Door");
+  if (lower.includes("site recovery")) terms.push("Azure Site Recovery (ASR)");
+  if (lower.includes("finops") || lower.includes("cost management")) terms.push("FinOps Framework");
+
+  const uniqueTerms = Array.from(new Set(terms)).slice(0, 4);
+
+  return {
+    isVerified: uniqueTerms.length > 0,
+    terms: uniqueTerms,
+  };
+}
+
 export const engine = new Engine();

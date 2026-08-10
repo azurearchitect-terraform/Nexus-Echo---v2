@@ -26,6 +26,7 @@ import {
   X,
   Zap,
   Briefcase,
+  ShieldCheck,
 } from "lucide-react";
 import type { RoutingMode } from "@nexus/core";
 import { useStore } from "@/lib/store";
@@ -462,6 +463,13 @@ export function Overlay() {
                           </div>
                         )}
 
+                        {item.verifiedSpec?.isVerified && (
+                          <div className="mt-2 flex items-center gap-1.5 rounded-md border border-emerald-500/30 bg-emerald-500/10 px-2 py-0.5 text-[10.5px] font-medium text-emerald-400 w-fit">
+                            <ShieldCheck className="h-3 w-3 text-emerald-400 shrink-0" />
+                            <span>✓ Verified Azure Spec: {item.verifiedSpec.terms.join(" · ")}</span>
+                          </div>
+                        )}
+
                         {item.provider && (
                           <div className="mt-2 flex items-center justify-between font-mono text-[10px] text-white/25 no-drag">
                             <span>
@@ -517,6 +525,13 @@ export function Overlay() {
                                   <span className="inline-block h-4 w-[2px] rounded-sm bg-accent align-middle ml-0.5 animate-[typewriterBlink_0.6s_ease-in-out_infinite]" />
                                 )}
                               </div>
+
+                              {item.verifiedSpec?.isVerified && (
+                                <div className="mt-2 flex items-center gap-1.5 rounded-md border border-emerald-500/30 bg-emerald-500/10 px-2 py-0.5 text-[10.5px] font-medium text-emerald-400 w-fit">
+                                  <ShieldCheck className="h-3 w-3 text-emerald-400 shrink-0" />
+                                  <span>✓ Verified Azure Spec: {item.verifiedSpec.terms.join(" · ")}</span>
+                                </div>
+                              )}
 
                               {/* End of Answer Divider Marker */}
                               <div className="my-3 flex items-center gap-2 text-white/20 select-none">
