@@ -467,7 +467,22 @@ export function Overlay() {
                   <EmptyState mode={mode} />
                 )
               ) : mode === "listen" ? (
-                <Transcript segments={segments} />
+                <div className="flex flex-col h-full min-h-0 space-y-3">
+                  <div className="flex-1 min-h-0 overflow-y-auto">
+                    <Transcript segments={segments} />
+                  </div>
+                  {(answer || answersList.length > 0) && (
+                    <div className="border-t border-glass-edge pt-3 space-y-2 shrink-0 animate-fade-up">
+                      <div className="flex items-center gap-1.5 text-accent text-[10px] font-mono uppercase tracking-wider">
+                        <Sparkles className="w-3.5 h-3.5 animate-pulse text-accent" />
+                        <span>Suggested Answer</span>
+                      </div>
+                      <div className="rounded-lg border border-accent/15 bg-accent/5 px-3 py-2 text-[13px] max-h-48 overflow-y-auto text-white/90">
+                        <Markdown>{answer ? (streaming ? typedText : answer.text) : [...answersList].reverse()[0]?.text || ""}</Markdown>
+                      </div>
+                    </div>
+                  )}
+                </div>
               ) : mode === "intel" ? (
                 <CompanyIntelHUD />
               ) : (
