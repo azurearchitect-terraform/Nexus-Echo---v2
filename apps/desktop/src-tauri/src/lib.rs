@@ -140,7 +140,6 @@ fn register_hotkeys(app: &tauri::AppHandle) -> tauri::Result<()> {
         let shortcut = Shortcut::new(Some(*modifiers), *code);
         let _ = app.global_shortcut().unregister(shortcut);
         let action_str = action.to_string();
-        let action_for_err = action_str.clone();
         let handle = handle.clone();
 
         if let Err(e) = app.global_shortcut().on_shortcut(shortcut, move |_, _, event| {
@@ -169,7 +168,23 @@ fn register_hotkeys(app: &tauri::AppHandle) -> tauri::Result<()> {
             // The UI decides what each action means; Rust only routes the signal.
             let _ = handle.emit("nexus://hotkey", action_str.clone());
         }) {
-            tracing::warn!("could not register hotkey for {action_for_err}: {e}");
+            // Hotkey reserved by another OS application (e.g. Teams/Bitwarden). Try Alt+Shift fallback
+            tracing::info!("Primary shortcut reserved for {action}: {e}. Attempting Alt+Shift fallback...");
+            let fallback_shortcut = Shortcut::new(Some(Modifiers::ALT.union(Modifiers::SHIFT)), *code);
+            let _ = app.global_shortcut().unregister(fallback_shortcut);
+            let action_str_fallback = action.to_string();
+            let handle_fallback = handle.clone();
+
+            let _ = app.global_shortcut().on_shortcut(fallback_shortcut, move |_, _, event| {
+                if event.state() != ShortcutState::Pressed {
+                    return;
+                }
+                let state = handle_fallback.state::<AppState>();
+                if !state.shortcuts_enabled.load(Ordering::SeqCst) {
+                    return;
+                }
+                let _ = handle_fallback.emit("nexus://hotkey", action_str_fallback.clone());
+            });
         }
     }
     Ok(())
