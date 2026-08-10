@@ -44,6 +44,76 @@ const EMBED_MODELS: Partial<Record<ProviderId, string>> = {
   ollama: "nomic-embed-text",
 };
 
+export interface QACacheEntry {
+  id: string;
+  question: string;
+  answer: string;
+  persona?: string;
+  createdAt: number;
+}
+
+export function calculateTextSimilarity(a: string, b: string): number {
+  const normalize = (str: string) =>
+    str
+      .toLowerCase()
+      .replace(/[^\w\s]/g, "")
+      .split(/\s+/)
+      .filter((w) => w.length > 2);
+
+  const tokensA = new Set(normalize(a));
+  const tokensB = new Set(normalize(b));
+
+  if (tokensA.size === 0 || tokensB.size === 0) return 0;
+
+  let intersection = 0;
+  for (const token of tokensA) {
+    if (tokensB.has(token)) intersection++;
+  }
+
+  const union = new Set([...tokensA, ...tokensB]).size;
+  return intersection / union;
+}
+
+export function getQACache(): QACacheEntry[] {
+  try {
+    const raw = localStorage.getItem("nexus_qa_cache");
+    return raw ? JSON.parse(raw) : [];
+  } catch {
+    return [];
+  }
+}
+
+export function saveToQACache(entry: Omit<QACacheEntry, "id" | "createdAt">): void {
+  try {
+    const existing = getQACache();
+    const isDuplicate = existing.some((item) => calculateTextSimilarity(item.question, entry.question) > 0.9);
+    if (!isDuplicate) {
+      const updated = [
+        ...existing,
+        { ...entry, id: `qa_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`, createdAt: Date.now() },
+      ].slice(-500); // keep last 500 QA pairs
+      localStorage.setItem("nexus_qa_cache", JSON.stringify(updated));
+    }
+  } catch (err) {
+    console.error("failed to save QA cache", err);
+  }
+}
+
+export function findCachedQA(question: string, minSimilarity = 0.82): QACacheEntry | null {
+  const cache = getQACache();
+  let bestMatch: QACacheEntry | null = null;
+  let highestScore = 0;
+
+  for (const item of cache) {
+    const score = calculateTextSimilarity(question, item.question);
+    if (score >= minSimilarity && score > highestScore) {
+      highestScore = score;
+      bestMatch = item;
+    }
+  }
+  return bestMatch;
+}
+
 export class Engine {
   readonly router = new HybridRouter();
   rag: RagStore | null = null;
@@ -238,6 +308,15 @@ export class Engine {
     useRag: boolean,
   ): AsyncGenerator<StreamEvent> {
     if (!this.settings) throw new Error("engine is not configured");
+    // 1. Check QA Cache for instant lookup (0 API Cost)
+    const cached = findCachedQA(prompt);
+    if (cached) {
+      console.log("[QA Cache] Instant Hit for prompt:", prompt);
+      yield { type: "token", requestId: "cache", delta: `[⚡ Cached Response - 0 API Cost]\n\n${cached.answer}` };
+      yield { type: "done", requestId: "cache", text: cached.answer, isCached: true } as any;
+      return;
+    }
+
     const isPersonal = isPersonalQuestion(prompt);
     console.debug("[RAG] isPersonalQuestion:", isPersonal, "| prompt:", prompt);
     const hits = (useRag && isPersonal) ? await this.retrieve(prompt) : [];
@@ -246,13 +325,23 @@ export class Engine {
       yield { type: "citation", requestId: "pending", docId: hit.docId, title: hit.title, score: hit.score };
     }
 
-    yield* this.router.run({
+    let fullAnswer = "";
+    for await (const event of this.router.run({
       system: askSystemPrompt(this.settings.systemPrompt, hits, this.settings.targetCompany, this.settings.targetJd),
       messages: [...history, { role: "user", content: prompt }],
       attachments,
       policy: this.settings.routing,
       models: this.models(),
-    });
+    })) {
+      if (event.type === "token") {
+        fullAnswer += event.delta;
+      }
+      yield event;
+    }
+
+    if (fullAnswer.trim()) {
+      saveToQACache({ question: prompt, answer: fullAnswer.trim(), persona: detectPersona(prompt) });
+    }
   }
 
   /** Listen mode: generate what the user should say next, from the live transcript. */
@@ -260,10 +349,21 @@ export class Engine {
     if (!this.settings) throw new Error("engine is not configured");
     const window = segments.length ? transcriptWindow(segments) : "The user is in a live conversation and needs a quick, direct, and relevant response.";
     const lastQuestion = [...segments].reverse().find((s) => s.source === "system")?.text ?? window;
+
+    // 1. Check QA Cache for instant lookup (0 API Cost)
+    const cached = findCachedQA(lastQuestion);
+    if (cached) {
+      console.log("[QA Cache] Instant Hit for live question:", lastQuestion);
+      yield { type: "token", requestId: "cache", delta: `[⚡ Cached Response - 0 API Cost]\n\n${cached.answer}` };
+      yield { type: "done", requestId: "cache", text: cached.answer, isCached: true } as any;
+      return;
+    }
+
     const isPersonal = isPersonalQuestion(lastQuestion);
     const hits = (this.settings.ragEnabled && isPersonal) ? await this.retrieve(lastQuestion) : [];
 
-    yield* this.router.run({
+    let fullAnswer = "";
+    for await (const event of this.router.run({
       system: listenSystemPrompt(this.settings.systemPrompt, hits, this.settings.targetCompany, this.settings.targetJd),
       messages: [
         {
@@ -273,7 +373,16 @@ export class Engine {
       ],
       policy: this.settings.routing,
       models: this.models(),
-    });
+    })) {
+      if (event.type === "token") {
+        fullAnswer += event.delta;
+      }
+      yield event;
+    }
+
+    if (fullAnswer.trim()) {
+      saveToQACache({ question: lastQuestion, answer: fullAnswer.trim(), persona: detectPersona(lastQuestion) });
+    }
   }
 
   private async collect(system: string, user: string, maxTokens = 1200, jsonMode = false): Promise<string> {
