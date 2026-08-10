@@ -467,7 +467,7 @@ export function Overlay() {
                   <EmptyState mode={mode} />
                 )
               ) : mode === "listen" ? (
-                <Transcript segments={segments} answersList={answersList} currentAnswer={answer} />
+                <Transcript segments={segments} />
               ) : mode === "intel" ? (
                 <CompanyIntelHUD />
               ) : (
