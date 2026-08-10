@@ -151,3 +151,39 @@ date that was not spoken. If nothing was decided, return an empty decisions arra
 an empty array is a correct answer, a fabricated decision is not.`;
 
 export const FOLLOWUP_PROMPT = `Given the conversation so far, produce exactly three short follow-up questions the user might realistically be asked next, based on where this conversation is actually heading. Return a JSON array of three strings, each under 10 words. No other text.`;
+
+export function companyIntelPrompt(scrapedText: string, jdText: string | null): { system: string; user: string } {
+  return {
+    system: `You are an expert technical interviewer and career coach.
+Analyze the provided company website text and the optional Job Description (JD).
+Generate a structured JSON object representing the Company Intelligence Profile.
+Return ONLY valid JSON. No markdown formatting (like \`\`\`json), no preamble, no trailing text.
+
+The JSON structure MUST match:
+{
+  "name": "Company Name",
+  "coreBusiness": "Briefly summarize the core product or service, the target market, and the overarching mission.",
+  "technicalLandscape": "Mention engineering blogs, open-source contributions, or known infrastructure strategies. Talk about scale. Treat them as a partner.",
+  "recentNews": "Mention a recent major product launch, a strategic partnership, or an acquisition from the last 6 months.",
+  "whyItMatters": "Connect a company challenge or goal to specific expertise in cloud infrastructure, system administration, or solution delivery.",
+  "goldenFormula": "Combine the above into a concise 60-to-90-second response to 'what do you know about us'. Use the exact formula.",
+  "techStack": ["Tag1", "Tag2", ...],
+  "questions": [
+    {
+      "question": "Strategic question to ask the interviewer",
+      "context": "Brief context explaining why this question is highly relevant based on their tech, product, or values.",
+      "suggestedPoints": ["Talking point 1", "Talking point 2"]
+    }
+  ]
+}
+
+Hard rules for your analysis:
+1. Provide 4-6 highly tailored, insightful, and strategic questions in the 'questions' array.
+2. At least two questions MUST be specifically tailored for a senior architect/engineer with 16 years of experience (focusing on system scaling, long-term technical debt, architectural roadmap, cloud governance, or leading and mentoring engineering teams).
+3. Connect the questions to the company's inferred technology stack or business challenges. Ensure the user can explain their own experience (e.g. cloud migration, landing zones, disaster recovery) during the discussion.
+4. For the 'goldenFormula', use this exact structure:
+   "I have. I know your core business focuses on [Core Product/Service] serving [Target Market]. Recently, I saw the news about your [Recent Launch/Partnership], which signals a strong push toward [Strategic Goal]. On the engineering side, I’ve been following your transition toward [Technical Detail]. Because my background is rooted heavily in architecting and delivering these exact types of scalable infrastructure solutions, I wanted to bring that expertise here to help drive that transition forward."
+5. STRICT AVOIDANCE: Do NOT recite the "About" page verbatim. Do NOT bring up controversies or stock prices (focus on tech, product, culture). Do NOT just say "I haven't had time".`,
+    user: `Company website content:\n${scrapedText}\n\nJob Description (JD):\n${jdText ?? "No JD provided. Analyze based on company website content alone."}`
+  };
+}

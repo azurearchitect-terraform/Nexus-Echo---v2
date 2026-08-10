@@ -16,7 +16,19 @@ export async function* readSSE(
 
   while (true) {
     const { done, value } = await reader.read();
-    if (done) break;
+    if (done) {
+      if (buffer.trim()) {
+        for (const line of buffer.split("\n")) {
+          if (!line.startsWith("data:")) continue;
+          const payload = line.slice(5).trim();
+          if (!payload || payload === "[DONE]") continue;
+          try {
+            yield JSON.parse(payload) as Record<string, unknown>;
+          } catch { /* ignore */ }
+        }
+      }
+      break;
+    }
     buffer += decoder.decode(value, { stream: true });
     const frames = buffer.split("\n\n");
     buffer = frames.pop() ?? "";

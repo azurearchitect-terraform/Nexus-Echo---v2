@@ -10,6 +10,7 @@ import {
   FOLLOWUP_PROMPT,
   detectPersona,
   isPersonalQuestion,
+  companyIntelPrompt,
 } from "@nexus/ai";
 import { RagStore, packVector, unpackVector } from "@nexus/rag";
 import type {
@@ -20,6 +21,7 @@ import type {
   TranscriptSegment,
   Attachment,
 } from "@nexus/core";
+import { CompanyIntel } from "@nexus/core";
 import { bridge, type StoredChunk } from "./bridge";
 
 /**
@@ -28,7 +30,7 @@ import { bridge, type StoredChunk } from "./bridge";
  * Settings; the names here are the sensible defaults, not hard-coded requirements.
  */
 export const DEFAULT_MODELS: Record<ProviderId, { fast: string; deep: string; vision: string }> = {
-  gemini: { fast: "gemini-3.5-flash-lite", deep: "gemini-3.6-flash", vision: "gemini-3.6-flash" },
+  gemini: { fast: "gemini-3.5-flash", deep: "gemini-3.6-flash", vision: "gemini-3.6-flash" },
   openai: { fast: "gpt-4o-mini", deep: "gpt-4o", vision: "gpt-4o" },
   ollama: { fast: "llama3.2:3b", deep: "llama3.1:8b", vision: "llama3.2-vision:11b" },
   "azure-openai": { fast: "gpt-4o-mini", deep: "gpt-4o", vision: "gpt-4o" },
@@ -273,23 +275,29 @@ export class Engine {
     });
   }
 
-  private async collect(system: string, user: string): Promise<string> {
+  private async collect(system: string, user: string, maxTokens = 1200, jsonMode = false): Promise<string> {
     if (!this.settings) return "";
     let out = "";
     for await (const event of this.router.run({
       system,
       messages: [{ role: "user", content: user }],
-      policy: { ...this.settings.routing, mode: "single" },
+      policy: { ...this.settings.routing, mode: "single", firstTokenTimeoutMs: 30000 },
       models: this.models(),
+      maxTokens,
+      jsonMode,
     })) {
-      if (event.type === "token") out += event.delta;
+      if (event.type === "token") {
+        out += event.delta;
+      } else if (event.type === "error") {
+        throw new Error(event.message);
+      }
     }
     return out;
   }
 
   async summarizeMeeting(segments: TranscriptSegment[]): Promise<MeetingSummary> {
     const raw = await this.collect(MEETING_SUMMARY_PROMPT, transcriptWindow(segments, 12000));
-    return parseJson<MeetingSummary>(raw, {
+    return parseStructuredJson<MeetingSummary>(raw, {
       title: "Untitled meeting",
       summary: "",
       decisions: [],
@@ -301,7 +309,84 @@ export class Engine {
 
   async followUps(segments: TranscriptSegment[]): Promise<string[]> {
     const raw = await this.collect(FOLLOWUP_PROMPT, transcriptWindow(segments, 3000));
-    return parseJson<string[]>(raw, []).slice(0, 3);
+    return parseStructuredJson<string[]>(raw, []).slice(0, 3);
+  }
+
+  async analyzeCompany(url: string, jdText: string | null): Promise<CompanyIntel> {
+    if (!this.settings) throw new Error("engine is not configured");
+
+    // Clean URL: prepend https:// if missing
+    let targetUrl = url.trim();
+    if (!/^https?:\/\//i.test(targetUrl)) {
+      targetUrl = "https://" + targetUrl;
+    }
+
+    // 1. Scrape URL via bridge
+    let scrapedText = await bridge.scrapeCompany(targetUrl);
+    console.debug("[CompanyIntel] Scraped text length (raw):", scrapedText.length);
+
+    // Truncate to ~12 000 chars (~3 000 tokens) so we don't overflow the model context
+    // and avoid triggering Gemini safety filters on noise-heavy raw web text
+    if (scrapedText.length > 12000) {
+      scrapedText = scrapedText.slice(0, 12000) + "\n\n[... content truncated for length ...]";
+    }
+
+    // If the scraper returned almost nothing, fall back to the URL / domain as context
+    if (scrapedText.trim().length < 50) {
+      const domain = new URL(targetUrl).hostname.replace(/^www\./, "");
+      scrapedText = `Company domain: ${domain}. No page content could be scraped. Please infer company information from the domain name and any JD provided.`;
+    }
+
+    // 2. Format prompt
+    const { system, user } = companyIntelPrompt(scrapedText, jdText);
+
+    // 3. Collect completion from AI router — use a high token limit + JSON mode for the rich JSON profile
+    const raw = await this.collect(system, user, 6000, true);
+
+    // 4. Parse JSON and validate with Zod
+    console.debug("[CompanyIntel] Raw AI response length:", raw.length, "| first 300 chars:", raw.slice(0, 300));
+    const parsed = parseCompanyIntelJson(raw);
+    if (!parsed) {
+      throw new Error(
+        `AI returned empty or unparseable response.\n\nRaw output (first 500 chars):\n${raw.slice(0, 500)}`
+      );
+    }
+    let intel: CompanyIntel;
+    try {
+      intel = CompanyIntel.parse(parsed);
+    } catch (zodErr: any) {
+      throw new Error(
+        `AI returned JSON but with wrong structure.\n\nZod error: ${zodErr.message}\n\nRaw JSON:\n${JSON.stringify(parsed, null, 2).slice(0, 800)}`
+      );
+    }
+
+    // 5. Index the parsed profile into RAG so it is retrievable during the live interview!
+    if (this.rag) {
+      const docId = `company_intel_${Date.now()}`;
+      const title = `Company Intel: ${intel.name}`;
+      const content = `Company: ${intel.name}
+Core Business & Revenue: ${intel.coreBusiness}
+Technical Landscape & Culture: ${intel.technicalLandscape}
+Recent News & Partnerships: ${intel.recentNews}
+Why It Matters (Candidate Fit): ${intel.whyItMatters}
+Elevator Pitch (Golden Formula): ${intel.goldenFormula}
+Tech Stack: ${intel.techStack.join(", ")}
+
+Strategic Prepared Questions:
+${intel.questions
+  .map(
+    (q, idx) =>
+      `Question ${idx + 1}: ${q.question}\nContext: ${q.context}\nSuggested Discussion Points:\n${q.suggestedPoints.map((p) => `- ${p}`).join("\n")}`
+  )
+  .join("\n\n")}`;
+
+      // Index in background so we don't block returning the results to UI
+      void this.rag.addDocument(docId, title, content).catch((err) => {
+        console.error("[RAG] Failed to index company intelligence profile:", err);
+      });
+    }
+
+    return intel;
   }
 }
 
@@ -314,16 +399,98 @@ export interface MeetingSummary {
   participants: string[];
 }
 
-/** Models fence JSON in markdown often enough that stripping it is mandatory. */
-function parseJson<T>(raw: string, fallback: T): T {
-  const cleaned = raw.trim().replace(/^```(?:json)?\s*/i, "").replace(/```\s*$/, "");
-  const start = cleaned.search(/[[{]/);
-  if (start === -1) return fallback;
-  try {
-    return JSON.parse(cleaned.slice(start)) as T;
-  } catch {
-    return fallback;
+function parseCompanyIntelJson(raw: string): unknown | null {
+  const candidate = extractJsonCandidate(raw);
+  if (!candidate) return null;
+
+  const attempts = [
+    candidate,
+    // Common model blemishes: trailing commas and fenced code blocks.
+    candidate.replace(/,\s*([}\]])/g, "$1"),
+    candidate.replace(/[\u201c\u201d]/g, '"').replace(/[\u2018\u2019]/g, "'"),
+    candidate
+      .replace(/,\s*([}\]])/g, "$1")
+      .replace(/[\u201c\u201d]/g, '"')
+      .replace(/[\u2018\u2019]/g, "'"),
+  ];
+
+  for (const attempt of attempts) {
+    try {
+      return JSON.parse(attempt);
+    } catch {
+      continue;
+    }
   }
+
+  return null;
+}
+
+function extractJsonCandidate(raw: string): string | null {
+  const text = raw.trim();
+  if (!text) return null;
+
+  // Strip a single fenced block if the model wrapped the result in markdown.
+  const unfenced = text
+    .replace(/^```(?:json)?\s*/i, "")
+    .replace(/\s*```$/i, "")
+    .trim();
+
+  const start = unfenced.search(/[\[{]/);
+  if (start === -1) return null;
+
+  const source = unfenced.slice(start);
+  const open = source[0];
+  const close = open === "{" ? "}" : "]";
+  const stack: string[] = [];
+  let inString = false;
+  let escaped = false;
+
+  for (let i = 0; i < source.length; i++) {
+    const ch = source[i]!;
+
+    if (escaped) {
+      escaped = false;
+      continue;
+    }
+
+    if (ch === "\\") {
+      escaped = inString;
+      continue;
+    }
+
+    if (ch === '"') {
+      inString = !inString;
+      continue;
+    }
+
+    if (inString) continue;
+
+    if (ch === "{" || ch === "[") {
+      stack.push(ch);
+      continue;
+    }
+
+    if (ch === "}" || ch === "]") {
+      const last = stack.pop();
+      if (!last) return null;
+      const expected = last === "{" ? "}" : "]";
+      if (ch !== expected) return null;
+
+      if (!stack.length) {
+        return source.slice(0, i + 1);
+      }
+    }
+  }
+
+  // If the model emitted a truncated object, fall back to the full trimmed source
+  // so a downstream parser can still try to repair it.
+  return source.endsWith(close) ? source : null;
+}
+
+function parseStructuredJson<T>(raw: string, fallback: T): T {
+  const parsed = parseCompanyIntelJson(raw);
+  if (!parsed) return fallback;
+  return parsed as T;
 }
 
 export const engine = new Engine();

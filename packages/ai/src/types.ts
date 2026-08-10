@@ -7,6 +7,8 @@ export interface GenerateOptions {
   model: string;
   temperature?: number;
   maxTokens?: number;
+  /** When true, instructs the provider to return raw JSON (no markdown fences). */
+  jsonMode?: boolean;
   signal: AbortSignal;
 }
 

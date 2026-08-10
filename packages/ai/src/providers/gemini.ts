@@ -44,16 +44,46 @@ export function createGeminiProvider(creds: ProviderCredentials): Provider {
           generationConfig: {
             temperature: o.temperature ?? 0.4,
             maxOutputTokens: o.maxTokens ?? 1200,
+            // Only enable JSON output mode for structured data calls (company intel, etc.)
+            ...(o.jsonMode ? { responseMimeType: "application/json" } : {}),
           },
         }),
       });
 
+      if (!res.ok) {
+        let errText = await res.text().catch(() => "Unknown error");
+        try {
+          const j = JSON.parse(errText);
+          errText = j?.error?.message ?? JSON.stringify(j);
+        } catch { /* ignore */ }
+        throw new Error(`Gemini API error (${res.status} ${res.statusText}): ${errText}`);
+      }
+
+      let hadContent = false;
+      let lastCandidate: any = null;
       for await (const frame of readSSE(res)) {
+        console.debug("[Gemini] SSE Frame:", JSON.stringify(frame));
         const candidates = frame["candidates"] as
-          | Array<{ content?: { parts?: Array<{ text?: string }> } }>
+          | Array<{ content?: { parts?: Array<{ text?: string }> }; finishReason?: string }>
           | undefined;
-        const text = candidates?.[0]?.content?.parts?.map((p) => p.text ?? "").join("") ?? "";
-        if (text) yield { delta: text, done: false };
+        const candidate = candidates?.[0];
+        if (candidate) lastCandidate = candidate;
+
+        const promptFeedback = frame["promptFeedback"] as { blockReason?: string } | undefined;
+        if (promptFeedback?.blockReason) {
+          throw new Error(`Gemini blocked the prompt (${promptFeedback.blockReason}). Try rephrasing or using a different URL.`);
+        }
+        
+        const finishReason = candidate?.finishReason;
+        // Safety filter block — throw so the router can propagate this as an error event
+        if (finishReason === "SAFETY" || finishReason === "RECITATION" || finishReason === "BLOCKED") {
+          throw new Error(`Gemini blocked the response (${finishReason}). Try rephrasing or using a different URL.`);
+        }
+        const text = candidate?.content?.parts?.map((p) => p.text ?? "").join("") ?? "";
+        if (text) { hadContent = true; yield { delta: text, done: false }; }
+      }
+      if (!hadContent) {
+        throw new Error(`Gemini returned an empty response. Last candidate: ${JSON.stringify(lastCandidate)}`);
       }
       yield { delta: "", done: true };
     },

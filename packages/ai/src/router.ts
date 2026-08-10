@@ -9,6 +9,10 @@ export interface RouterInput {
   policy: RoutingPolicy;
   /** role -> model name, per provider */
   models: Record<ProviderId, { fast: string; deep: string; vision: string }>;
+  /** Override the per-request max output token limit. Defaults to 1200. */
+  maxTokens?: number;
+  /** When true, enables the provider's native JSON output mode for structured responses. */
+  jsonMode?: boolean;
 }
 
 interface Health {
@@ -74,8 +78,23 @@ export class HybridRouter {
   }
 
   private candidates(policy: RoutingPolicy): ProviderId[] {
-    if (policy.airgapped || policy.mode === "offline") return ["ollama"];
-    if (policy.mode === "single") return [policy.primary];
+    if (policy.airgapped || policy.mode === "offline") {
+      return this.providers.has("ollama") ? ["ollama"] : [];
+    }
+
+    if (policy.mode === "single") {
+      if (this.providers.has(policy.primary)) {
+        return [policy.primary];
+      }
+      if (this.providers.has(policy.secondary)) {
+        return [policy.secondary];
+      }
+      if (this.providers.has("ollama")) {
+        return ["ollama"];
+      }
+      return [];
+    }
+
     const pair = [policy.primary, policy.secondary].filter((id) => this.providers.has(id));
     const usable = pair.filter((id) => !this.isCircuitOpen(id));
     const pool = usable.length ? usable : pair;
@@ -113,7 +132,7 @@ export class HybridRouter {
       (a) => a.kind === "image" || a.kind === "screenshot",
     );
     const fallbackModels: Record<ProviderId, { fast: string; deep: string; vision: string }> = {
-      gemini: { fast: "gemini-3.5-flash-lite", deep: "gemini-3.1-pro-preview", vision: "gemini-3.6-flash" },
+      gemini: { fast: "gemini-3.5-flash", deep: "gemini-3.6-flash", vision: "gemini-3.6-flash" },
       openai: { fast: "gpt-4o-mini", deep: "gpt-4o", vision: "gpt-4o" },
       ollama: { fast: "llama3.2:3b", deep: "llama3.1:8b", vision: "llama3.2-vision:11b" },
       "azure-openai": { fast: "gpt-4o-mini", deep: "gpt-4o", vision: "gpt-4o" },
@@ -128,7 +147,8 @@ export class HybridRouter {
       model,
       signal,
       temperature: 0.4,
-      maxTokens: 1200,
+      maxTokens: input.maxTokens ?? 1200,
+      ...(input.jsonMode !== undefined ? { jsonMode: input.jsonMode } : {}),
     };
   }
 

@@ -2,6 +2,7 @@ mod audio;
 mod commands;
 mod db;
 mod secrets;
+mod scraper;
 mod stealth;
 mod vision;
 
@@ -111,6 +112,7 @@ pub fn run() {
             commands::wipe_all_data,
             commands::diagnostics,
             commands::set_shortcuts_enabled,
+            commands::scrape_company,
         ])
         .on_window_event(|window, event| {
             // Closing the dashboard should leave the assistant running in the tray,

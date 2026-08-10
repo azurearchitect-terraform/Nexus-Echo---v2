@@ -193,3 +193,22 @@ export const RagHit = z.object({
   score: z.number(),
 });
 export type RagHit = z.infer<typeof RagHit>;
+
+export const IntelQuestion = z.object({
+  question: z.string(),
+  context: z.string(),
+  suggestedPoints: z.array(z.string()),
+});
+export type IntelQuestion = z.infer<typeof IntelQuestion>;
+
+export const CompanyIntel = z.object({
+  name: z.string(),
+  coreBusiness: z.string(),
+  technicalLandscape: z.string(),
+  recentNews: z.string(),
+  whyItMatters: z.string(),
+  goldenFormula: z.string(),
+  techStack: z.array(z.string()),
+  questions: z.array(IntelQuestion),
+});
+export type CompanyIntel = z.infer<typeof CompanyIntel>;

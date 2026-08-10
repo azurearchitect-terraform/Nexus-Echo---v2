@@ -42,6 +42,7 @@ export const bridge = {
 
   diagnostics: () => invoke<Diagnostics>("diagnostics"),
   setShortcutsEnabled: (payload: boolean) => invoke<void>("set_shortcuts_enabled", { payload }),
+  scrapeCompany: (payload: string) => invoke<string>("scrape_company", { payload }),
 };
 
 export interface StealthReport {

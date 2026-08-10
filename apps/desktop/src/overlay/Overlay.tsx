@@ -715,7 +715,7 @@ async function transcribe(wavBase64: string, language: string): Promise<string> 
     const apiKey = await b.resolveProviderKey(gemini.keyRef).catch(() => null);
     if (!apiKey) return "";
     const candidateModels = Array.from(
-      new Set([gemini.models?.fast || "gemini-3.6-flash", "gemini-2.0-flash", "gemini-1.5-flash"])
+      new Set([gemini.models?.fast || "gemini-3.5-flash", "gemini-3.6-flash", "gemini-3.5-flash"])
     );
     for (const model of candidateModels) {
       try {

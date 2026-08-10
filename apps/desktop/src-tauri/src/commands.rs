@@ -334,3 +334,8 @@ pub fn set_shortcuts_enabled(state: State<'_, AppState>, payload: bool) -> CmdRe
     state.shortcuts_enabled.store(payload, Ordering::SeqCst);
     Ok(())
 }
+
+#[tauri::command]
+pub async fn scrape_company(payload: String) -> CmdResult<String> {
+    crate::scraper::scrape_company_website(&payload).await.map_err(err)
+}

@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
 import {
+  Briefcase,
   Database,
   FileText,
   Gauge,
@@ -16,12 +17,14 @@ import { StealthPanel } from "./StealthPanel";
 import { KnowledgePanel } from "./KnowledgePanel";
 import { MeetingsPanel } from "./MeetingsPanel";
 import { PluginsPanel } from "./PluginsPanel";
+import { CompanyPrepPanel } from "./CompanyPrepPanel";
 
-type Tab = "meetings" | "knowledge" | "providers" | "stealth" | "plugins" | "about";
+type Tab = "meetings" | "knowledge" | "company" | "providers" | "stealth" | "plugins" | "about";
 
 const TABS: Array<{ id: Tab; label: string; icon: React.ReactNode }> = [
   { id: "meetings", label: "Meetings & chats", icon: <MessageSquare className="h-4 w-4" /> },
   { id: "knowledge", label: "Knowledge", icon: <FileText className="h-4 w-4" /> },
+  { id: "company", label: "Company Prep", icon: <Briefcase className="h-4 w-4" /> },
   { id: "providers", label: "Providers & routing", icon: <KeyRound className="h-4 w-4" /> },
   { id: "stealth", label: "Stealth & privacy", icon: <Shield className="h-4 w-4" /> },
   { id: "plugins", label: "Plugins", icon: <Puzzle className="h-4 w-4" /> },
@@ -84,6 +87,7 @@ export function Dashboard() {
         <div className="mx-auto max-w-3xl px-8 py-8">
           {tab === "meetings" && <MeetingsPanel />}
           {tab === "knowledge" && <KnowledgePanel />}
+          {tab === "company" && <CompanyPrepPanel />}
           {tab === "providers" && <SettingsPanel />}
           {tab === "stealth" && <StealthPanel />}
           {tab === "plugins" && <PluginsPanel />}
