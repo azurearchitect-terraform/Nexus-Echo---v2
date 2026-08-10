@@ -182,6 +182,39 @@ an empty array is a correct answer, a fabricated decision is not.`;
 
 export const FOLLOWUP_PROMPT = `Given the conversation so far, produce exactly three short follow-up questions the user might realistically be asked next, based on where this conversation is actually heading. Return a JSON array of three strings, each under 10 words. No other text.`;
 
+export function endOfInterviewQuestionsPrompt(
+  transcript: string,
+  targetCompany?: string,
+  targetJd?: string
+): { system: string; user: string } {
+  return {
+    system: `You are Nexus Echo, an elite executive career coach for senior architects and engineers with 16+ years of experience.
+The user is at the END of an interview. The interviewer just asked: "Do you have any questions for us?"
+
+Analyze the live transcript of the interview that just occurred, along with the optional Target Company and Job Description.
+Generate 4 to 5 hyper-specific, strategic, and impressive questions for the candidate to ASK the interviewer right now.
+
+Hard rules for questions:
+1. Direct Transcript Reference: At least 3 questions MUST directly reference specific technical topics, projects, architectural challenges, or tools mentioned during this call.
+2. Demonstrates 16+ Years Seniority: Frame questions around long-term scalability, cloud governance, team velocity, engineering culture, FinOps, or technical debt management.
+3. Sound Natural & Professional: Write exact, spoken-ready questions the candidate can read aloud immediately.
+
+Return a JSON array of 4-5 objects with this exact structure (return ONLY JSON, no markdown formatting):
+[
+  {
+    "question": "The exact question for the candidate to say out loud to the interviewer",
+    "context": "Why this question is strategic and what senior experience it demonstrates",
+    "followUpNote": "Quick key point to mention when they answer"
+  }
+]`,
+    user: `Target Company: ${targetCompany || "Target Company"}
+Target JD / Values: ${targetJd || "Senior Architecture Role"}
+
+Live Interview Transcript:
+${transcript || "The interview transcript is brief. Generate 4 strategic senior questions based on company profile and JD."}`,
+  };
+}
+
 export function companyIntelPrompt(scrapedText: string, jdText: string | null): { system: string; user: string } {
   return {
     system: `You are an expert technical interviewer and career coach.

@@ -29,6 +29,7 @@ import {
   ShieldCheck,
   Building2,
   Trash2,
+  HelpCircle,
 } from "lucide-react";
 import type { RoutingMode } from "@nexus/core";
 import { useStore } from "@/lib/store";
@@ -329,6 +330,15 @@ export function Overlay() {
               </span>
             )}
 
+            <button
+              className="flex items-center gap-1 rounded bg-amber-500/15 border border-amber-500/30 px-2 py-0.5 text-[10.5px] font-semibold text-amber-400 hover:bg-amber-500/25 transition-colors no-drag"
+              onClick={() => void useStore.getState().generateEndQuestions()}
+              title="Generate 4-5 impressive candidate questions based on the live interview transcript"
+            >
+              <HelpCircle className="h-3 w-3" />
+              End Q&amp;A
+            </button>
+
             {answer?.firstTokenMs ? (
               <span className="font-mono text-[10px] text-white/30 ml-auto" title="Time to first token">
                 <Zap className="mr-0.5 inline h-2.5 w-2.5" />
@@ -361,6 +371,65 @@ export function Overlay() {
           <>
             {/* ---------- body ---------- */}
             <div className="min-h-0 flex-1 overflow-y-auto px-3 py-2.5">
+
+              {/* Live End-of-Interview Candidate Questions Banner */}
+              {useStore.getState().endInterviewQuestions && useStore.getState().endInterviewQuestions.length > 0 && (
+                <div className="mb-3 rounded-xl border border-amber-500/30 bg-amber-500/10 p-3.5 space-y-3 animate-fadeIn no-drag">
+                  <div className="flex items-center justify-between">
+                    <div className="flex items-center gap-1.5 text-amber-400">
+                      <Sparkles className="h-4 w-4" />
+                      <span className="text-[11.5px] font-semibold uppercase tracking-wide font-mono">End-of-Interview Questions (To Ask Them)</span>
+                    </div>
+                    <button
+                      onClick={() => useStore.setState({ endInterviewQuestions: [] })}
+                      className="text-[10px] text-amber-400/60 hover:text-amber-400 font-mono"
+                    >
+                      Dismiss
+                    </button>
+                  </div>
+                  
+                  <p className="text-[11.5px] text-amber-400/80 leading-normal">
+                    Tailored directly from what was spoken during this call. Ask these out loud when they ask "Do you have any questions for us?":
+                  </p>
+
+                  <div className="space-y-2.5">
+                    {useStore.getState().endInterviewQuestions.map((q, idx) => (
+                      <div key={idx} className="rounded-lg border border-amber-500/20 bg-black/50 p-3 space-y-1.5">
+                        <div className="flex items-start gap-2">
+                          <span className="flex h-4.5 w-4.5 shrink-0 items-center justify-center rounded-full bg-amber-500/20 text-[10px] font-bold text-amber-400 font-mono">
+                            {idx + 1}
+                          </span>
+                          <p className="text-[12.5px] font-semibold text-white/95 leading-normal">{q.question}</p>
+                        </div>
+
+                        <div className="pl-6 space-y-1">
+                          <p className="text-[11px] text-amber-500/70 italic">{q.context}</p>
+                          {q.followUpNote && (
+                            <div className="rounded bg-white/[0.03] p-1.5 text-[10.5px] text-white/60 font-mono">
+                              💡 Tip: {q.followUpNote}
+                            </div>
+                          )}
+                        </div>
+
+                        <div className="pl-6 pt-1 flex items-center gap-2">
+                          <button
+                            onClick={() => void useStore.getState().ask(q.question, false)}
+                            className="rounded bg-amber-500/20 px-2 py-0.5 text-[10px] font-semibold text-amber-300 hover:bg-amber-500/30 transition-colors"
+                          >
+                            Generate My Answer
+                          </button>
+                          <button
+                            onClick={() => void navigator.clipboard.writeText(q.question)}
+                            className="rounded border border-white/10 px-2 py-0.5 text-[10px] text-white/40 hover:text-white transition-colors"
+                          >
+                            Copy
+                          </button>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
 
               {/* Live capture banner: "Hearing…" while speaker is active, question flash after STT */}
               {(speakingSystem || speakingMic || liveQuestion) && mode === "listen" && (

@@ -47,6 +47,7 @@ interface AppStore {
   speakingMic: boolean;
   speakingSystem: boolean;
   followUps: string[];
+  endInterviewQuestions: Array<{ question: string; context: string; followUpNote: string }>;
   latestCompanyIntel: CompanyIntel | null;
 
   boot: () => Promise<void>;
@@ -60,6 +61,7 @@ interface AppStore {
   pushSegment: (segment: TranscriptSegment) => void;
   setSpeaking: (source: "microphone" | "system", speaking: boolean) => void;
   suggest: () => Promise<void>;
+  generateEndQuestions: () => Promise<void>;
   setLatestCompanyIntel: (intel: CompanyIntel | null) => void;
   clearScreen: () => void;
   reset: () => void;
@@ -156,6 +158,7 @@ export const useStore = create<AppStore>((set, get) => ({
   speakingMic: false,
   speakingSystem: false,
   followUps: [],
+  endInterviewQuestions: [],
   latestCompanyIntel: null,
 
   async boot() {
@@ -181,6 +184,10 @@ export const useStore = create<AppStore>((set, get) => ({
     void listen<CompanyIntel | null>("nexus://company-intel-updated", (event) => {
       // Avoid infinite cycles by setting state in memory only, without re-emitting
       set({ latestCompanyIntel: event.payload });
+    });
+
+    void listen<Array<{ question: string; context: string; followUpNote: string }>>("nexus://end-questions-updated", (event) => {
+      set({ endInterviewQuestions: event.payload });
     });
 
     set({ settings, ready: true, latestCompanyIntel });
@@ -369,6 +376,11 @@ export const useStore = create<AppStore>((set, get) => ({
       const recentSegments = get().segments.slice(-3);
       const combinedText = recentSegments.map((s) => s.text).join(" ");
 
+      // Auto-trigger end-of-interview candidate questions when interviewer asks "do you have any questions for us?"
+      if (/do you have any questions|any questions for (us|me|our team)|any questions from your/i.test(combinedText)) {
+        void get().generateEndQuestions();
+      }
+
       if (!isActionableQuestion(combinedText)) {
         return; // Ignore notification noise, casual remarks, non-questions
       }
@@ -387,6 +399,12 @@ export const useStore = create<AppStore>((set, get) => ({
 
   setSpeaking(source, speaking) {
     set(source === "microphone" ? { speakingMic: speaking } : { speakingSystem: speaking });
+  },
+
+  async generateEndQuestions() {
+    const questions = await engine.generateEndInterviewQuestions(get().segments);
+    set({ endInterviewQuestions: questions });
+    void emit("nexus://end-questions-updated", questions);
   },
 
   async suggest() {

@@ -211,14 +211,14 @@ export const JdInterviewQuestion = z.object({
 export type JdInterviewQuestion = z.infer<typeof JdInterviewQuestion>;
 
 export const CompanyIntel = z.object({
-  name: z.string(),
-  coreBusiness: z.string(),
-  technicalLandscape: z.string(),
-  recentNews: z.string(),
-  whyItMatters: z.string(),
-  goldenFormula: z.string(),
-  techStack: z.array(z.string()),
-  questions: z.array(IntelQuestion),
+  name: z.string().default("Target Company"),
+  coreBusiness: z.string().default("Global enterprise product and technology solutions."),
+  technicalLandscape: z.string().default("Cloud infrastructure, scalable microservices, and enterprise security."),
+  recentNews: z.string().default("Ongoing cloud modernization and digital transformation initiatives."),
+  whyItMatters: z.string().default("Direct alignment with senior cloud architecture and infrastructure experience."),
+  goldenFormula: z.string().default("I know your core business focuses on scaling enterprise solutions and delivering cloud infrastructure."),
+  techStack: z.array(z.string()).default([]),
+  questions: z.array(IntelQuestion).default([]),
   jdInterviewQuestions: z.array(JdInterviewQuestion).default([]),
 });
 export type CompanyIntel = z.infer<typeof CompanyIntel>;

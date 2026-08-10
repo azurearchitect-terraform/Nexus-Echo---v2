@@ -11,6 +11,7 @@ import {
   detectPersona,
   isPersonalQuestion,
   companyIntelPrompt,
+  endOfInterviewQuestionsPrompt,
 } from "@nexus/ai";
 import { RagStore, packVector, unpackVector } from "@nexus/rag";
 import type {
@@ -312,6 +313,15 @@ export class Engine {
     return parseStructuredJson<string[]>(raw, []).slice(0, 3);
   }
 
+  async generateEndInterviewQuestions(segments: TranscriptSegment[]): Promise<Array<{ question: string; context: string; followUpNote: string }>> {
+    if (!this.settings) return [];
+    const window = segments.length ? transcriptWindow(segments, 8000) : "";
+    const { system, user } = endOfInterviewQuestionsPrompt(window, this.settings.targetCompany, this.settings.targetJd);
+    const raw = await this.collect(system, user, 3000, true);
+    const parsed = parseStructuredJson<Array<{ question: string; context: string; followUpNote: string }>>(raw, []);
+    return Array.isArray(parsed) ? parsed : [];
+  }
+
   async analyzeCompany(url: string, jdText: string | null): Promise<CompanyIntel> {
     if (!this.settings) throw new Error("engine is not configured");
 
@@ -399,19 +409,81 @@ export interface MeetingSummary {
   participants: string[];
 }
 
+function repairTruncatedJson(jsonStr: string): string {
+  let str = jsonStr.trim();
+  str = str.replace(/^```(?:json)?\s*/i, "").replace(/\s*```$/i, "").trim();
+
+  // Handle curly quotes
+  str = str.replace(/[\u201c\u201d]/g, '"').replace(/[\u2018\u2019]/g, "'");
+
+  const firstBrace = str.indexOf("{");
+  const firstBracket = str.indexOf("[");
+  let startIdx = 0;
+  if (firstBrace !== -1 && (firstBracket === -1 || firstBrace < firstBracket)) {
+    startIdx = firstBrace;
+  } else if (firstBracket !== -1) {
+    startIdx = firstBracket;
+  }
+  if (startIdx > 0) {
+    str = str.slice(startIdx);
+  }
+
+  let inString = false;
+  let escaped = false;
+  const stack: string[] = [];
+
+  for (let i = 0; i < str.length; i++) {
+    const ch = str[i]!;
+    if (escaped) {
+      escaped = false;
+      continue;
+    }
+    if (ch === "\\") {
+      escaped = true;
+      continue;
+    }
+    if (ch === '"') {
+      inString = !inString;
+      continue;
+    }
+    if (inString) continue;
+
+    if (ch === "{" || ch === "[") {
+      stack.push(ch);
+    } else if (ch === "}" || ch === "]") {
+      stack.pop();
+    }
+  }
+
+  // 1. If cut off inside a string, close the string
+  if (inString) {
+    str += '"';
+  }
+
+  // 2. Remove trailing comma or key colon if cut off
+  str = str.replace(/,\s*$/, "");
+  str = str.replace(/:\s*$/, ': ""');
+
+  // 3. Close open arrays/objects
+  while (stack.length > 0) {
+    const open = stack.pop();
+    if (open === "{") str += "}";
+    if (open === "[") str += "]";
+  }
+
+  return str;
+}
+
 function parseCompanyIntelJson(raw: string): unknown | null {
-  const candidate = extractJsonCandidate(raw);
-  if (!candidate) return null;
+  const candidate = extractJsonCandidate(raw) || raw;
+  if (!candidate || !candidate.trim()) return null;
 
   const attempts = [
     candidate,
-    // Common model blemishes: trailing commas and fenced code blocks.
     candidate.replace(/,\s*([}\]])/g, "$1"),
     candidate.replace(/[\u201c\u201d]/g, '"').replace(/[\u2018\u2019]/g, "'"),
-    candidate
-      .replace(/,\s*([}\]])/g, "$1")
-      .replace(/[\u201c\u201d]/g, '"')
-      .replace(/[\u2018\u2019]/g, "'"),
+    repairTruncatedJson(candidate),
+    repairTruncatedJson(raw),
   ];
 
   for (const attempt of attempts) {
@@ -429,7 +501,6 @@ function extractJsonCandidate(raw: string): string | null {
   const text = raw.trim();
   if (!text) return null;
 
-  // Strip a single fenced block if the model wrapped the result in markdown.
   const unfenced = text
     .replace(/^```(?:json)?\s*/i, "")
     .replace(/\s*```$/i, "")
@@ -440,7 +511,6 @@ function extractJsonCandidate(raw: string): string | null {
 
   const source = unfenced.slice(start);
   const open = source[0];
-  const close = open === "{" ? "}" : "]";
   const stack: string[] = [];
   let inString = false;
   let escaped = false;
@@ -472,9 +542,9 @@ function extractJsonCandidate(raw: string): string | null {
 
     if (ch === "}" || ch === "]") {
       const last = stack.pop();
-      if (!last) return null;
+      if (!last) continue;
       const expected = last === "{" ? "}" : "]";
-      if (ch !== expected) return null;
+      if (ch !== expected) continue;
 
       if (!stack.length) {
         return source.slice(0, i + 1);
@@ -482,9 +552,8 @@ function extractJsonCandidate(raw: string): string | null {
     }
   }
 
-  // If the model emitted a truncated object, fall back to the full trimmed source
-  // so a downstream parser can still try to repair it.
-  return source.endsWith(close) ? source : null;
+  // Return source even if truncated so repairTruncatedJson can auto-repair it
+  return source;
 }
 
 function parseStructuredJson<T>(raw: string, fallback: T): T {
