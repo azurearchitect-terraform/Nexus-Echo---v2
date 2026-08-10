@@ -341,9 +341,7 @@ export const useStore = create<AppStore>((set, get) => ({
           answersList: [...s.answersList.filter((a) => a.id !== final.id), final],
         }));
       }
-      if (segments.length) {
-        void engine.followUps(segments).then((followUps) => set({ followUps }));
-      }
+      // Follow-up generation disabled for clean UI
     } finally {
       set({ streaming: false });
       const nextTask = get().questionBuffer[0];

@@ -473,21 +473,6 @@ export function Overlay() {
               ) : (
                 <EmptyState mode={mode} />
               )}
-
-              {followUps.length > 0 && mode === "listen" && (
-                <div className="mt-3 flex flex-wrap gap-1.5">
-                  {followUps.map((q) => (
-                    <button
-                      key={q}
-                      onClick={() => void ask(q, false)}
-                      className="rounded-full border border-white/10 bg-white/5 px-2.5 py-1 text-[11px] text-white/60
-                                 transition-colors hover:border-accent/40 hover:text-white"
-                    >
-                      {q}
-                    </button>
-                  ))}
-                </div>
-              )}
             </div>
 
             {/* ---------- footer ---------- */}
