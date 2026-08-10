@@ -374,48 +374,6 @@ export function Overlay() {
               </button>
             </div>
 
-            {settings.targetCompany && (
-              <span
-                className="flex items-center gap-1 rounded border border-accent/30 bg-accent/10 px-1.5 py-0.5 text-accent font-medium text-[10px]"
-                title={`Active Target Company & JD Context: ${settings.targetCompany}`}
-              >
-                <Building2 className="h-2.5 w-2.5 text-accent" />
-                {settings.targetCompany}
-              </span>
-            )}
-
-            <select
-              value={useStore.getState().manualPersona || ""}
-              onChange={(e) => {
-                const val = e.target.value;
-                useStore.getState().setManualPersona(val || null);
-              }}
-              className="rounded border border-purple-500/40 bg-purple-500/15 px-2 py-0.5 text-purple-300 font-mono text-[10px] focus:outline-none cursor-pointer no-drag hover:bg-purple-500/25 transition-colors"
-              title="Interviewer Persona Mode: Auto-Detect or Manual Override"
-            >
-              <option value="" className="bg-neutral-900 text-purple-300">
-                ⚡ Auto-Detect (Real-Time STT)
-              </option>
-              <option value="Executive / Director" className="bg-neutral-900 text-white">
-                🏢 Executive / Director (FinOps & ROI)
-              </option>
-              <option value="Technical Architect" className="bg-neutral-900 text-white">
-                💻 Technical Architect (Azure & Scaling)
-              </option>
-              <option value="Recruiter / HR" className="bg-neutral-900 text-white">
-                👔 Recruiter / HR (Culture & Growth)
-              </option>
-            </select>
-
-            <button
-              className="flex items-center gap-1 rounded bg-amber-500/15 border border-amber-500/30 px-2 py-0.5 text-[10.5px] font-semibold text-amber-400 hover:bg-amber-500/25 transition-colors no-drag"
-              onClick={() => void useStore.getState().generateEndQuestions()}
-              title="Generate 4-5 impressive candidate questions based on the live interview transcript"
-            >
-              <HelpCircle className="h-3 w-3" />
-              End Q&amp;A
-            </button>
-
             {answer?.firstTokenMs ? (
               <span className="font-mono text-[10px] text-white/30 ml-auto" title="Time to first token">
                 <Zap className="mr-0.5 inline h-2.5 w-2.5" />
@@ -843,10 +801,10 @@ export function Overlay() {
                 </div>
               )}
 
-              <div className="mt-2 flex items-center justify-between border-t border-white/10 pt-1.5 no-drag font-mono text-[10px] text-white/50">
+              <div className="mt-2 flex items-center justify-between border-t border-white/10 pt-2 no-drag font-mono text-[10px] text-white/50 gap-2">
                 <div className="flex items-center gap-1.5 min-w-0">
                   <Sun className="h-3 w-3 text-amber-400 shrink-0" />
-                  <span className="shrink-0 text-white/60">Transparency:</span>
+                  <span className="shrink-0 text-white/60">Opacity:</span>
                   <input
                     type="range"
                     min="0.30"
@@ -859,12 +817,47 @@ export function Overlay() {
                         stealth: { ...settings.stealth, opacity: parseFloat(e.target.value) },
                       })
                     }
-                    className="h-1.5 w-28 cursor-pointer accent-accent bg-white/20 rounded-lg appearance-none"
+                    className="h-1.5 w-20 cursor-pointer accent-accent bg-white/20 rounded-lg appearance-none"
                     title="Adjust window opacity (30% - 100%)"
                   />
-                  <span className="w-8 text-right text-accent font-semibold">
+                  <span className="w-6 text-right text-accent font-semibold">
                     {Math.round((settings.stealth.opacity ?? 0.92) * 100)}%
                   </span>
+                </div>
+
+                {/* Persona Selector & End Q&A Button Moved to Bottom Toolbar */}
+                <div className="flex items-center gap-2 shrink-0">
+                  <select
+                    value={useStore.getState().manualPersona || ""}
+                    onChange={(e) => {
+                      const val = e.target.value;
+                      useStore.getState().setManualPersona(val || null);
+                    }}
+                    className="rounded border border-purple-500/40 bg-purple-500/15 px-2 py-0.5 text-purple-300 font-mono text-[10px] focus:outline-none cursor-pointer no-drag hover:bg-purple-500/25 transition-colors"
+                    title="Interviewer Persona Mode: Auto-Detect or Manual Override"
+                  >
+                    <option value="" className="bg-neutral-900 text-purple-300">
+                      ⚡ Auto-Detect Persona
+                    </option>
+                    <option value="Executive / Director" className="bg-neutral-900 text-white">
+                      🏢 Executive / Director (FinOps & ROI)
+                    </option>
+                    <option value="Technical Architect" className="bg-neutral-900 text-white">
+                      💻 Technical Architect (Azure & Scaling)
+                    </option>
+                    <option value="Recruiter / HR" className="bg-neutral-900 text-white">
+                      👔 Recruiter / HR (Culture & Growth)
+                    </option>
+                  </select>
+
+                  <button
+                    className="flex items-center gap-1 rounded bg-amber-500/15 border border-amber-500/30 px-2 py-0.5 text-[10.5px] font-semibold text-amber-400 hover:bg-amber-500/25 transition-colors no-drag"
+                    onClick={() => void useStore.getState().generateEndQuestions()}
+                    title="Generate 4-5 impressive candidate questions based on the live interview transcript"
+                  >
+                    <HelpCircle className="h-3 w-3" />
+                    End Q&amp;A
+                  </button>
                 </div>
               </div>
             </footer>
