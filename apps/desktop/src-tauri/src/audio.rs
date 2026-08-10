@@ -229,7 +229,8 @@ pub fn start_stream(
                 Some(false) => {
                     let samples = std::mem::take(&mut *pending.lock());
                     let _ = app_cb.emit("nexus://vad", VadEvent { source, speaking: false, energy });
-                    if samples.len() > (TARGET_SAMPLE_RATE as usize / 4) {
+                    // Ignore short notification sounds, chimes, and pings (require at least 600ms of audio)
+                    if samples.len() >= (TARGET_SAMPLE_RATE as usize * 6 / 10) {
                         let peak = samples.iter().fold(0f32, |a, s| a.max(s.abs()));
                         let utterance = Utterance {
                             source,
