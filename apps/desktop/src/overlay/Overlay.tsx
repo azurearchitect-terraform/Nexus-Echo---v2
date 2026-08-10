@@ -467,7 +467,27 @@ export function Overlay() {
                   <EmptyState mode={mode} />
                 )
               ) : mode === "listen" ? (
-                <Transcript segments={segments} />
+                <div className="flex flex-col gap-0 h-full overflow-y-auto">
+                  <Transcript segments={segments} />
+
+                  {/* Simple suggested answer — no frame, just header + text */}
+                  {(answer?.text || streaming) && mode === "listen" && (
+                    <div className="mt-3 pt-2 border-t border-white/10">
+                      <h4 className="text-[11px] font-semibold uppercase tracking-wider text-accent mb-1.5 select-none">
+                        Suggested Answer
+                        {streaming && (
+                          <span className="inline-block h-2 w-2 rounded-full bg-accent ml-2 animate-pulse" />
+                        )}
+                      </h4>
+                      <div className="text-[12.5px] leading-relaxed text-white/85">
+                        <Markdown>{(streaming ? typedText : answer?.text) || "…"}</Markdown>
+                        {streaming && (
+                          <span className="inline-block h-4 w-[2px] rounded-sm bg-accent align-middle ml-0.5 animate-[typewriterBlink_0.6s_ease-in-out_infinite]" />
+                        )}
+                      </div>
+                    </div>
+                  )}
+                </div>
               ) : mode === "intel" ? (
                 <CompanyIntelHUD />
               ) : (
