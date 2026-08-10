@@ -315,6 +315,7 @@ export const useStore = create<AppStore>((set, get) => ({
     const answerId = uid("ans");
     set({
       streaming: true,
+      mode: "ask",
       answer: { id: answerId, question: lastQuestion || undefined, persona, text: "", citations: [] },
     });
     try {
