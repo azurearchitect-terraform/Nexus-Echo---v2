@@ -148,6 +148,30 @@ export function Overlay() {
     };
   }, [setSpeaking]);
 
+  // Keyboard Shortcuts to Nudge Overlay Window: Ctrl+Up / Ctrl+Down / Ctrl+Left / Ctrl+Right
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.ctrlKey || e.metaKey) {
+        const step = e.shiftKey ? 100 : 30; // Shift + Ctrl + Arrow for 100px fast move
+        if (e.key === "ArrowUp") {
+          e.preventDefault();
+          void bridge.moveOverlay(0, -step);
+        } else if (e.key === "ArrowDown") {
+          e.preventDefault();
+          void bridge.moveOverlay(0, step);
+        } else if (e.key === "ArrowLeft") {
+          e.preventDefault();
+          void bridge.moveOverlay(-step, 0);
+        } else if (e.key === "ArrowRight") {
+          e.preventDefault();
+          void bridge.moveOverlay(step, 0);
+        }
+      }
+    };
+    window.addEventListener("keydown", handleKeyDown);
+    return () => window.removeEventListener("keydown", handleKeyDown);
+  }, []);
+
   // ---- finished utterances -> transcription ---------------------------------
   useEffect(() => {
     const unlisten = listen<{

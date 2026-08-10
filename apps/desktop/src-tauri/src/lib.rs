@@ -87,6 +87,7 @@ pub fn run() {
             commands::apply_stealth,
             commands::toggle_overlay,
             commands::resize_overlay,
+            commands::move_overlay,
             commands::panic_hide,
             commands::focus_overlay,
             commands::set_click_through,

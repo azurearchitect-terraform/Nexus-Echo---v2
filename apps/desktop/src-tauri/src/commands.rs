@@ -57,6 +57,18 @@ pub fn resize_overlay(app: AppHandle, height: u32) -> CmdResult<()> {
 }
 
 #[tauri::command]
+pub fn move_overlay(app: AppHandle, dx: i32, dy: i32) -> CmdResult<()> {
+    let window = app
+        .get_webview_window("overlay")
+        .ok_or_else(|| "overlay window is not available".to_string())?;
+    let mut pos = window.outer_position().map_err(err)?;
+    pos.x += dx;
+    pos.y += dy;
+    window.set_position(pos).map_err(err)?;
+    Ok(())
+}
+
+#[tauri::command]
 pub fn panic_hide(app: AppHandle) -> CmdResult<()> {
     stealth::panic_hide(&app);
     Ok(())

@@ -10,6 +10,7 @@ export const bridge = {
   applyStealth: (payload: StealthConfig) => invoke<StealthReport>("apply_stealth", { payload }),
   toggleOverlay: () => invoke<boolean>("toggle_overlay"),
   resizeOverlay: (height: number) => invoke<void>("resize_overlay", { height }),
+  moveOverlay: (dx: number, dy: number) => invoke<void>("move_overlay", { dx, dy }),
   panicHide: () => invoke<void>("panic_hide"),
   focusOverlay: () => invoke<void>("focus_overlay"),
   setClickThrough: (payload: boolean) => invoke<void>("set_click_through", { payload }),
