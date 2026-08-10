@@ -72,6 +72,70 @@ const DEFAULT_SETTINGS = AppSettings.parse({
   ],
 });
 
+let suggestDebounceTimer: ReturnType<typeof setTimeout> | null = null;
+
+const NON_QUESTION_PHRASES = new Set([
+  "hello", "hi", "hey", "thank you", "thanks", "okay", "ok", "got it", "sure",
+  "mhm", "yeah", "yes", "no", "cool", "alright", "right", "good morning",
+  "good afternoon", "bye", "see you", "ding", "chime", "ping", "bell", "beep",
+  "sound", "noise", "thank you very much", "thanks a lot", "sounds good",
+  "makes sense", "i see", "understood", "great", "perfect", "awesome",
+  "testing", "microphones", "check"
+]);
+
+const QUESTION_INDICATORS = [
+  "what", "why", "how", "when", "where", "who", "which",
+  "can", "could", "would", "should", "explain", "describe", "tell",
+  "difference", "versus", "compare", "architecture", "design", "implement",
+  "experience", "scenario", "suppose", "consider", "imagine", "given",
+  "have you", "do you", "did you", "is there", "are there", "what is",
+  "what are", "how do", "how to", "why do", "why is", "can you", "could you"
+];
+
+const INCOMPLETE_TRAILING_WORDS = [
+  "and", "or", "so", "but", "with", "that", "where", "if", "then", "to",
+  "for", "about", "is", "are", "a", "an", "the", "suppose", "consider",
+  "imagine", "given", "when", "as", "like", "because"
+];
+
+export function isActionableQuestion(text: string): boolean {
+  const trimmed = text.trim();
+  if (!trimmed) return false;
+
+  const lower = trimmed.toLowerCase().replace(/[^a-z0-9\s]/g, "");
+  if (NON_QUESTION_PHRASES.has(lower)) return false;
+
+  const words = lower.split(/\s+/).filter(Boolean);
+  if (words.length < 3) {
+    if (trimmed.endsWith("?")) return true;
+    if (words.some((w) => ["what", "why", "how", "explain"].includes(w))) return true;
+    return false;
+  }
+
+  if (trimmed.endsWith("?")) return true;
+  return QUESTION_INDICATORS.some((ind) => lower.includes(ind));
+}
+
+export function isIncompleteScenario(text: string): boolean {
+  const trimmed = text.trim();
+  if (!trimmed) return false;
+  if (trimmed.endsWith("?")) return false;
+
+  const lower = trimmed.toLowerCase();
+  const words = lower.split(/\s+/).filter(Boolean);
+  if (words.length === 0) return false;
+
+  const lastWord = words[words.length - 1];
+  if (lastWord && INCOMPLETE_TRAILING_WORDS.includes(lastWord)) return true;
+
+  const startsWithScenario = ["suppose", "consider", "imagine", "given", "scenario", "let's say"].some((s) => lower.startsWith(s));
+  if (startsWithScenario && !lower.includes("what") && !lower.includes("how") && !lower.includes("why") && !lower.includes("explain")) {
+    return true;
+  }
+
+  return false;
+}
+
 export const useStore = create<AppStore>((set, get) => ({
   ready: false,
   settings: DEFAULT_SETTINGS,
@@ -294,7 +358,27 @@ export const useStore = create<AppStore>((set, get) => ({
   pushSegment(segment) {
     set((s) => ({ segments: [...s.segments, segment] }));
     if (segment.isFinal && get().settings.autoRespond !== "manual-only") {
-      void get().suggest();
+      if (suggestDebounceTimer) {
+        clearTimeout(suggestDebounceTimer);
+        suggestDebounceTimer = null;
+      }
+
+      const recentSegments = get().segments.slice(-3);
+      const combinedText = recentSegments.map((s) => s.text).join(" ");
+
+      if (!isActionableQuestion(combinedText)) {
+        return; // Ignore notification noise, casual remarks, non-questions
+      }
+
+      if (isIncompleteScenario(combinedText)) {
+        // Speaker paused mid-scenario — wait 1600ms for them to complete before generating
+        suggestDebounceTimer = setTimeout(() => {
+          suggestDebounceTimer = null;
+          void get().suggest();
+        }, 1600);
+      } else {
+        void get().suggest();
+      }
     }
   },
 
@@ -308,7 +392,8 @@ export const useStore = create<AppStore>((set, get) => ({
       return;
     }
     const segments = get().segments;
-    const lastQuestion = [...segments].reverse().find((s) => s.text.trim())?.text ?? "";
+    const recent = segments.slice(-3);
+    const lastQuestion = recent.map((s) => s.text.trim()).filter(Boolean).join(" ") || "Live Question";
     const persona = lastQuestion ? detectPersona(lastQuestion) : (get().detectedPersona ?? undefined);
     if (persona) set({ detectedPersona: persona });
 
