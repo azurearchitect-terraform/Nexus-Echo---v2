@@ -30,7 +30,47 @@ import {
   Building2,
   Trash2,
   HelpCircle,
+  Clock,
+  ShieldAlert,
 } from "lucide-react";
+
+function isTrapQuestion(text?: string): boolean {
+  if (!text) return false;
+  const lower = text.toLowerCase();
+  return /mistake|failure|conflict|leaving|left|scope creep|delay|weakness|disagree|argument|violation|over budget|failed|challenge/.test(lower);
+}
+
+function AnswerPacingTimer() {
+  const [elapsed, setElapsed] = useState(0);
+
+  useEffect(() => {
+    const timer = setInterval(() => {
+      setElapsed((prev) => prev + 1);
+    }, 1000);
+    return () => clearInterval(timer);
+  }, []);
+
+  const mins = Math.floor(elapsed / 60);
+  const secs = (elapsed % 60).toString().padStart(2, "0");
+  const timeStr = `${mins}:${secs}`;
+
+  let colorClass = "text-emerald-400 border-emerald-500/30 bg-emerald-500/10";
+  let label = "Pace: Great";
+  if (elapsed >= 30 && elapsed < 60) {
+    colorClass = "text-amber-400 border-amber-500/30 bg-amber-500/10";
+    label = "Pace: Ideal Window";
+  } else if (elapsed >= 60) {
+    colorClass = "text-rose-400 border-rose-500/30 bg-rose-500/10 animate-pulse";
+    label = "Pace: Wrap Up Soon";
+  }
+
+  return (
+    <span className={`inline-flex items-center gap-1 rounded border px-2 py-0.5 text-[10px] font-mono ${colorClass}`} title="Target spoken duration: 45-75 seconds">
+      <Clock className="h-3 w-3" />
+      <span>{label} ({timeStr})</span>
+    </span>
+  );
+}
 import type { RoutingMode } from "@nexus/core";
 import { useStore } from "@/lib/store";
 import { bridge } from "@/lib/bridge";
@@ -520,11 +560,22 @@ export function Overlay() {
                         {answer.question && (
                           <div className="mb-2 flex items-start justify-between text-[14px] font-medium text-white/80">
                             <span className="font-mono text-accent">Q: {answer.question}</span>
-                            {answer.persona && (
-                              <span className="rounded bg-purple-500/15 px-1.5 py-0.5 text-[10px] text-purple-300 ml-2 shrink-0">
-                                {answer.persona}
-                              </span>
-                            )}
+                            <div className="flex items-center gap-1.5 ml-2 shrink-0">
+                              <AnswerPacingTimer />
+                              {answer.persona && (
+                                <span className="rounded bg-purple-500/15 px-1.5 py-0.5 text-[10px] text-purple-300">
+                                  {answer.persona}
+                                </span>
+                              )}
+                            </div>
+                          </div>
+                        )}
+
+                        {/* Trap Question Guardrail Banner */}
+                        {isTrapQuestion(answer.question) && (
+                          <div className="mb-2.5 flex items-center gap-2 rounded-lg border border-emerald-500/30 bg-emerald-500/10 px-3 py-2 text-[11.5px] text-emerald-300 animate-fadeIn">
+                            <ShieldAlert className="h-4 w-4 shrink-0 text-emerald-400" />
+                            <span><strong>Trap Question Guardrail:</strong> Lead with resolution, SLAs, governance & lessons learned. Do not criticize past teams.</span>
                           </div>
                         )}
 

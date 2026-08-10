@@ -95,6 +95,7 @@ export const AppSettings = z.object({
   systemPrompt: z.string().default(""),
   targetCompany: z.string().default(""),
   targetJd: z.string().default(""),
+  answerFormat: z.enum(["stara", "concise", "detailed"]).default("stara"),
   ragEnabled: z.boolean().default(true),
   ragEmbedModel: z.string().optional(),
 });
