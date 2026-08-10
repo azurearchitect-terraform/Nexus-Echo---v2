@@ -268,69 +268,37 @@ export class HybridRouter {
     ids: ProviderId[],
     input: RouterInput,
   ): AsyncGenerator<StreamEvent> {
+    // Hybrid Tier strategy: Gemini listens (STT), OpenAI (gpt-4o-mini) writes the response directly.
+    // To be 100% cost-sensitive without double-charging, we stream directly from the target OpenAI provider
+    // (or fallback to fast provider if deep is not configured).
     const [fastId, deepId] = ids as [ProviderId, ProviderId];
-    const fastProvider = this.providers.get(fastId);
-    const deepProvider = this.providers.get(deepId);
-    if (!fastProvider) return;
+    const targetId = (deepId && this.providers.get(deepId)) ? deepId : fastId;
+    const provider = this.providers.get(targetId);
+    if (!provider) return;
 
-    const fastCtl = new AbortController();
-    const deepCtl = new AbortController();
-    const fastOpts = this.buildOptions(fastId, input, "fast", fastCtl.signal);
-    const deepOpts = deepProvider ? this.buildOptions(deepId, input, "deep", deepCtl.signal) : null;
-
-    // Deep pass runs in the background, buffered, ready to replace the fast answer.
-    const deepPromise = (async () => {
-      if (!deepProvider || !deepOpts) return null;
-      let text = "";
-      try {
-        for await (const chunk of deepProvider.stream(deepOpts)) {
-          if (chunk.done) break;
-          text += chunk.delta;
-        }
-        return text;
-      } catch {
-        this.penalize(deepId);
-        return null;
-      }
-    })();
+    const ctl = new AbortController();
+    const opts = this.buildOptions(targetId, input, "deep", ctl.signal);
 
     let firstTokenMs = 0;
-    yield { type: "start", requestId, provider: fastId, model: fastOpts.model };
+    yield { type: "start", requestId, provider: targetId, model: opts.model };
     try {
-      for await (const chunk of fastProvider.stream(fastOpts)) {
+      for await (const chunk of provider.stream(opts)) {
         if (chunk.done) break;
         if (!chunk.delta) continue;
         if (!firstTokenMs) {
           firstTokenMs = performance.now() - started;
-          this.note(fastId, firstTokenMs);
+          this.note(targetId, firstTokenMs);
         }
         yield { type: "token", requestId, delta: chunk.delta };
       }
     } catch (err) {
-      this.penalize(fastId);
+      this.penalize(targetId);
       yield {
         type: "error",
         requestId,
         message: err instanceof Error ? err.message : String(err),
         recoverable: true,
       };
-    }
-
-    const deepText = await deepPromise;
-    if (deepText && deepText.trim().length > 40 && deepOpts) {
-      yield {
-        type: "swap",
-        requestId,
-        provider: deepId,
-        model: deepOpts.model,
-        reason: "deeper model finished — replacing the instant answer",
-      };
-      // Stream deep text in small chunks to avoid pop-up effect
-      const CHUNK_SIZE = 6;
-      for (let i = 0; i < deepText.length; i += CHUNK_SIZE) {
-        yield { type: "token", requestId, delta: deepText.slice(i, i + CHUNK_SIZE) };
-        await new Promise((r) => setTimeout(r, 8));
-      }
     }
 
     yield { type: "done", requestId, latencyMs: performance.now() - started, firstTokenMs };
