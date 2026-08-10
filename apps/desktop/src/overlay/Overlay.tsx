@@ -330,7 +330,7 @@ export function Overlay() {
               title="Interviewer Persona Mode: Auto-Detect or Manual Override"
             >
               <option value="" className="bg-neutral-900 text-purple-300">
-                ⚡ Persona: {useStore.getState().detectedPersona || "Auto"}
+                ⚡ Auto-Detect (Real-Time STT)
               </option>
               <option value="Executive / Director" className="bg-neutral-900 text-white">
                 🏢 Executive / Director (FinOps & ROI)
