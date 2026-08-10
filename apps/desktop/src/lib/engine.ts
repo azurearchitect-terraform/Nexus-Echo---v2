@@ -31,9 +31,9 @@ import { bridge, type StoredChunk } from "./bridge";
  */
 export const DEFAULT_MODELS: Record<ProviderId, { fast: string; deep: string; vision: string }> = {
   gemini: { fast: "gemini-3.5-flash", deep: "gemini-3.6-flash", vision: "gemini-3.6-flash" },
-  openai: { fast: "gpt-4o-mini", deep: "gpt-4o", vision: "gpt-4o" },
+  openai: { fast: "gpt-4o-mini", deep: "gpt-4o-mini", vision: "gpt-4o" },
   ollama: { fast: "llama3.2:3b", deep: "llama3.1:8b", vision: "llama3.2-vision:11b" },
-  "azure-openai": { fast: "gpt-4o-mini", deep: "gpt-4o", vision: "gpt-4o" },
+  "azure-openai": { fast: "gpt-4o-mini", deep: "gpt-4o-mini", vision: "gpt-4o" },
   custom: { fast: "default", deep: "default", vision: "default" },
 };
 
