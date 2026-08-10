@@ -321,6 +321,13 @@ export const useStore = create<AppStore>((set, get) => ({
       for await (const event of engine.suggest(segments)) {
         if (event.type === "token") {
           set((s) => ({ answer: s.answer ? { ...s.answer, text: s.answer.text + event.delta } : s.answer }));
+        } else if (event.type === "swap") {
+          // Deep model is taking over — clear the fast answer so deep streams in cleanly
+          set((s) => ({
+            answer: s.answer
+              ? { ...s.answer, text: "", provider: event.provider, model: event.model, swapped: true }
+              : s.answer,
+          }));
         } else if (event.type === "start") {
           set((s) => ({
             answer: s.answer ? { ...s.answer, provider: event.provider, model: event.model } : s.answer,

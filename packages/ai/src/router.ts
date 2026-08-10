@@ -325,7 +325,12 @@ export class HybridRouter {
         model: deepOpts.model,
         reason: "deeper model finished — replacing the instant answer",
       };
-      yield { type: "token", requestId, delta: deepText };
+      // Stream deep text in small chunks to avoid pop-up effect
+      const CHUNK_SIZE = 6;
+      for (let i = 0; i < deepText.length; i += CHUNK_SIZE) {
+        yield { type: "token", requestId, delta: deepText.slice(i, i + CHUNK_SIZE) };
+        await new Promise((r) => setTimeout(r, 8));
+      }
     }
 
     yield { type: "done", requestId, latencyMs: performance.now() - started, firstTokenMs };
