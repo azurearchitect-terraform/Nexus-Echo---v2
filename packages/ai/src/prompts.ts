@@ -91,25 +91,49 @@ export function isPersonalQuestion(text: string): boolean {
   );
 }
 
-export function askSystemPrompt(userSystemPrompt: string, hits: RagHit[]): string {
+export function askSystemPrompt(
+  userSystemPrompt: string,
+  hits: RagHit[],
+  targetCompany?: string,
+  targetJd?: string
+): string {
   const knowledge = hits.length
     ? `\n\nRETRIEVED CONTEXT — cite by [title] when you use one of these; ignore any that are irrelevant rather than forcing them in:\n${hits
         .map((h, i) => `[${i + 1}] ${h.title} (relevance ${h.score.toFixed(2)})\n${h.text}`)
         .join("\n\n")}`
     : "";
 
+  const companyInjection = (targetCompany || targetJd)
+    ? `\n\nTARGET COMPANY & JOB DESCRIPTION INJECTION:
+- Target Company: ${targetCompany || "Interview Partner"}
+- Target Role / Job Description / Company Values: ${targetJd || "Target Position"}
+- COMPANY VALUE & JD ALIGNMENT: Seamlessly weave the target company's mission, engineering culture, and specific JD requirements into your answer. Even for generic technical or behavioral questions, tailor your examples, architectural decisions, and terminology to demonstrate perfect alignment with ${targetCompany || "the target role"}.`
+    : "";
+
   return `You are Nexus Echo, a private expert assistant rendered on a translucent overlay. Provide thorough, structured, and complete answers.
 
-${ANSWER_SHAPE}${knowledge}
+${ANSWER_SHAPE}${companyInjection}${knowledge}
 
 ${userSystemPrompt ? `\nUSER'S STANDING INSTRUCTIONS (these take priority over format rules where they conflict):\n${userSystemPrompt}` : ""}`;
 }
 
-export function listenSystemPrompt(userSystemPrompt: string, hits: RagHit[]): string {
+export function listenSystemPrompt(
+  userSystemPrompt: string,
+  hits: RagHit[],
+  targetCompany?: string,
+  targetJd?: string
+): string {
   const knowledge = hits.length
     ? `\n\nBACKGROUND THE USER HAS INDEXED — use it to make answers specific to them:\n${hits
         .map((h) => `- ${h.title}: ${h.text}`)
         .join("\n")}`
+    : "";
+
+  const companyInjection = (targetCompany || targetJd)
+    ? `\n\nTARGET COMPANY & JOB DESCRIPTION INJECTION:
+- Target Company: ${targetCompany || "Interview Partner"}
+- Target Role / Job Description / Company Values: ${targetJd || "Target Position"}
+- COMPANY VALUE & JD ALIGNMENT: Seamlessly weave the target company's mission, engineering culture, and specific JD requirements into your answer. Even for generic technical or behavioral questions, tailor your examples, architectural decisions, and terminology to demonstrate perfect alignment with ${targetCompany || "the target role"}.`
     : "";
 
   return `You are Nexus Echo in Listen mode. You are watching a live transcript of a meeting, interview, or call. Someone has just addressed the user, and the user needs to answer out loud.
@@ -121,7 +145,7 @@ AUDIENCE ROLE-ADAPTIVE TONE RULES:
 - Technical Architect: Lead with production-grade Azure architecture, High Availability (HA/DR), Terraform IaC, Entra ID security, and vWAN/ExpressRoute networking.
 - Recruiter / HR: Lead with career journey, team leadership, technical mentorship, and clear communication.
 
-${ANSWER_SHAPE}${knowledge}
+${ANSWER_SHAPE}${companyInjection}${knowledge}
 
 ${userSystemPrompt ? `\nUSER'S STANDING INSTRUCTIONS:\n${userSystemPrompt}` : ""}`;
 }

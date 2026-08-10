@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { Check, Eye, EyeOff, Zap } from "lucide-react";
+import { Check, Eye, EyeOff, Zap, Building2 } from "lucide-react";
 import { useStore } from "@/lib/store";
 import { bridge } from "@/lib/bridge";
 import { DEFAULT_MODELS } from "@/lib/engine";
@@ -280,6 +280,42 @@ export function SettingsPanel() {
             </div>
           );
         })}
+      </div>
+
+      {/* ---------------- Target Company & Job Description Injection ---------------- */}
+      <div className="rounded-xl border border-accent/20 bg-accent/[0.04] p-4 space-y-4">
+        <div>
+          <h3 className="text-[13px] font-semibold text-accent flex items-center gap-1.5">
+            <Building2 className="h-4 w-4" /> Active Job Description & Company Value Injection
+          </h3>
+          <p className="mt-1 text-[12px] text-white/50 leading-relaxed">
+            Enter your target company and job description / cultural values. The AI will dynamically align every live answer to match the company's culture and specific JD requirements.
+          </p>
+        </div>
+
+        <div className="space-y-3">
+          <div>
+            <label className="block text-[12px] font-medium text-white/70 mb-1">Target Company</label>
+            <input
+              type="text"
+              placeholder="e.g. Microsoft, Amazon, Goldman Sachs"
+              value={settings.targetCompany}
+              onChange={(e) => void saveSettings({ ...settings, targetCompany: e.target.value })}
+              className="w-full rounded-lg border border-white/10 bg-black/50 px-3 py-2 text-[13px] focus:border-accent/40 focus:outline-none"
+            />
+          </div>
+
+          <div>
+            <label className="block text-[12px] font-medium text-white/70 mb-1">Job Description & Company Values</label>
+            <textarea
+              rows={3}
+              placeholder="e.g. Principal Azure Architect - Focus on Zero Trust, FinOps cost management, Customer Obsession, and HA/DR resilience."
+              value={settings.targetJd}
+              onChange={(e) => void saveSettings({ ...settings, targetJd: e.target.value })}
+              className="w-full rounded-lg border border-white/10 bg-black/50 px-3 py-2 text-[13px] focus:border-accent/40 focus:outline-none"
+            />
+          </div>
+        </div>
       </div>
 
       {/* ---------------- system prompt ---------------- */}

@@ -93,6 +93,8 @@ export const AppSettings = z.object({
   telemetry: z.literal(false).default(false),
   theme: z.enum(["dark", "light", "system"]).default("dark"),
   systemPrompt: z.string().default(""),
+  targetCompany: z.string().default(""),
+  targetJd: z.string().default(""),
   ragEnabled: z.boolean().default(true),
   ragEmbedModel: z.string().optional(),
 });

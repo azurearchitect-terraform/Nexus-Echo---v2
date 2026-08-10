@@ -27,6 +27,7 @@ import {
   Zap,
   Briefcase,
   ShieldCheck,
+  Building2,
 } from "lucide-react";
 import type { RoutingMode } from "@nexus/core";
 import { useStore } from "@/lib/store";
@@ -306,6 +307,16 @@ export function Overlay() {
                 {listening && settings.audio.captureSystemAudio && <Waveform active={speakingSystem} tone="system" />}
               </button>
             </div>
+
+            {settings.targetCompany && (
+              <span
+                className="flex items-center gap-1 rounded border border-accent/30 bg-accent/10 px-1.5 py-0.5 text-accent font-medium text-[10px]"
+                title={`Active Target Company & JD Context: ${settings.targetCompany}`}
+              >
+                <Building2 className="h-2.5 w-2.5 text-accent" />
+                {settings.targetCompany}
+              </span>
+            )}
 
             {useStore.getState().detectedPersona && (
               <span

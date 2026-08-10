@@ -246,7 +246,7 @@ export class Engine {
     }
 
     yield* this.router.run({
-      system: askSystemPrompt(this.settings.systemPrompt, hits),
+      system: askSystemPrompt(this.settings.systemPrompt, hits, this.settings.targetCompany, this.settings.targetJd),
       messages: [...history, { role: "user", content: prompt }],
       attachments,
       policy: this.settings.routing,
@@ -263,7 +263,7 @@ export class Engine {
     const hits = (this.settings.ragEnabled && isPersonal) ? await this.retrieve(lastQuestion) : [];
 
     yield* this.router.run({
-      system: listenSystemPrompt(this.settings.systemPrompt, hits),
+      system: listenSystemPrompt(this.settings.systemPrompt, hits, this.settings.targetCompany, this.settings.targetJd),
       messages: [
         {
           role: "user",
