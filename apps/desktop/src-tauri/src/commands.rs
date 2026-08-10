@@ -2,7 +2,7 @@
 //! schema on the TypeScript side, and returns a typed error string rather than
 //! panicking across the FFI boundary.
 
-use crate::{audio, db, secrets, stealth, vision, AppState};
+use crate::{audio, db, event_logger, secrets, stealth, vision, AppState};
 use serde::{Deserialize, Serialize};
 use std::sync::atomic::Ordering;
 use tauri::{AppHandle, Manager, State};
@@ -26,6 +26,7 @@ pub fn apply_stealth(
         .ok_or_else(|| "overlay window is not available".to_string())?;
     stealth::apply(&window, &payload).map_err(err)?;
     *state.stealth.lock() = payload;
+    event_logger::log_event(1004, event_logger::LogLevel::Info, "Stealth and window display affinity rules applied.");
     Ok(stealth::verify(&window))
 }
 
@@ -167,8 +168,9 @@ pub fn start_listening(
         }
     }
 
-    *state.active_meeting.lock() = Some(payload.meeting_id);
+    *state.active_meeting.lock() = Some(payload.meeting_id.clone());
     *state.capture.lock() = Some(session);
+    event_logger::log_event(1002, event_logger::LogLevel::Info, &format!("Audio listening capture session started. Meeting ID: {}", payload.meeting_id));
     Ok(())
 }
 
@@ -184,6 +186,7 @@ pub fn stop_listening(state: State<'_, AppState>) -> CmdResult<u64> {
     };
     *guard = None;
     *state.active_meeting.lock() = None;
+    event_logger::log_event(1003, event_logger::LogLevel::Info, "Audio listening capture session stopped.");
     Ok(elapsed)
 }
 

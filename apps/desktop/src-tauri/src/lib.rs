@@ -1,6 +1,7 @@
 mod audio;
 mod commands;
 mod db;
+mod event_logger;
 mod secrets;
 mod scraper;
 mod stealth;
@@ -81,6 +82,7 @@ pub fn run() {
 
             register_hotkeys(app.handle())?;
             build_tray(app.handle())?;
+            event_logger::log_event(1001, event_logger::LogLevel::Info, "Nexus Echo application launched successfully.");
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![
