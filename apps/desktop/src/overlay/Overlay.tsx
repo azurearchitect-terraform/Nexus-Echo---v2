@@ -396,7 +396,7 @@ export function Overlay() {
                           </p>
                         ) : (
                           <div className="relative">
-                            <Markdown>{(streaming ? typedText : answer.text) || "…"}</Markdown>
+                            <Markdown>{answer?.text || "…"}</Markdown>
                             {streaming && (
                               <span
                                 className="inline-block h-4 w-[2px] rounded-sm bg-accent align-middle ml-0.5 animate-[typewriterBlink_0.6s_ease-in-out_infinite]"
@@ -480,7 +480,7 @@ export function Overlay() {
                         )}
                       </h4>
                       <div className="text-[12.5px] leading-relaxed text-white/85">
-                        <Markdown>{(streaming ? typedText : answer?.text) || "…"}</Markdown>
+                        <Markdown>{answer?.text || "…"}</Markdown>
                         {streaming && (
                           <span className="inline-block h-4 w-[2px] rounded-sm bg-accent align-middle ml-0.5 animate-[typewriterBlink_0.6s_ease-in-out_infinite]" />
                         )}
