@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import { useTypewriter } from "@/hooks/useTypewriter";
 import { listen } from "@tauri-apps/api/event";
+import { getCurrentWindow } from "@tauri-apps/api/window";
 import {
   Camera,
   Check,
@@ -850,6 +851,31 @@ export function Overlay() {
                     </option>
                   </select>
 
+                  <div className="flex items-center gap-1 border-l border-white/10 pl-2">
+                    <span className="text-[9.5px] text-white/40 font-mono">Size:</span>
+                    <button
+                      onClick={() => void bridge.resizeOverlay(450)}
+                      className="rounded bg-white/5 border border-white/10 px-1.5 py-0.5 text-[9.5px] text-white/70 hover:bg-white/15 hover:text-white transition-colors"
+                      title="Resize to Compact Height (450px)"
+                    >
+                      450px
+                    </button>
+                    <button
+                      onClick={() => void bridge.resizeOverlay(650)}
+                      className="rounded bg-white/5 border border-white/10 px-1.5 py-0.5 text-[9.5px] text-white/70 hover:bg-white/15 hover:text-white transition-colors"
+                      title="Resize to Standard Height (650px)"
+                    >
+                      650px
+                    </button>
+                    <button
+                      onClick={() => void bridge.resizeOverlay(850)}
+                      className="rounded bg-white/5 border border-white/10 px-1.5 py-0.5 text-[9.5px] text-white/70 hover:bg-white/15 hover:text-white transition-colors"
+                      title="Resize to Tall Height (850px)"
+                    >
+                      850px
+                    </button>
+                  </div>
+
                   <button
                     className="flex items-center gap-1 rounded bg-amber-500/15 border border-amber-500/30 px-2 py-0.5 text-[10.5px] font-semibold text-amber-400 hover:bg-amber-500/25 transition-colors no-drag"
                     onClick={() => void useStore.getState().generateEndQuestions()}
@@ -858,7 +884,37 @@ export function Overlay() {
                     <HelpCircle className="h-3 w-3" />
                     End Q&amp;A
                   </button>
+
+                  {/* Corner Drag Handle for Super Easy Window Resizing */}
+                  <div
+                    onMouseDown={() => {
+                      try {
+                        void (getCurrentWindow() as any).startResizing("SouthEast");
+                      } catch (e) {
+                        console.error("failed to start resizing", e);
+                      }
+                    }}
+                    className="no-drag cursor-nwse-resize p-1 text-accent hover:text-white transition-colors flex items-center justify-center font-bold text-[13px] rounded bg-accent/15 border border-accent/30 hover:bg-accent/30 ml-1"
+                    title="Click & Drag Corner to Resize Window Easily"
+                  >
+                    ⇲
+                  </div>
                 </div>
+              </div>
+
+              {/* Bottom Edge Native Resize Bar */}
+              <div
+                onMouseDown={() => {
+                  try {
+                    void (getCurrentWindow() as any).startResizing("South");
+                  } catch (e) {
+                    console.error("failed to start resizing", e);
+                  }
+                }}
+                className="no-drag h-2.5 w-full cursor-s-resize hover:bg-accent/30 transition-colors flex items-center justify-center rounded-b-xl opacity-60 hover:opacity-100"
+                title="Click & Drag Bottom Border to Resize Height"
+              >
+                <div className="h-1 w-12 rounded-full bg-white/30" />
               </div>
             </footer>
           </>
