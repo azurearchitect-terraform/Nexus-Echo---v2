@@ -320,15 +320,28 @@ export function Overlay() {
               </span>
             )}
 
-            {useStore.getState().detectedPersona && (
-              <span
-                className="flex items-center gap-1 rounded border border-purple-500/30 bg-purple-500/10 px-1.5 py-0.5 text-purple-300 font-mono text-[10px]"
-                title="Auto-detected Interviewer Persona"
-              >
-                <Sparkles className="h-2.5 w-2.5 text-purple-400" />
-                {useStore.getState().detectedPersona}
-              </span>
-            )}
+            <select
+              value={useStore.getState().manualPersona || ""}
+              onChange={(e) => {
+                const val = e.target.value;
+                useStore.getState().setManualPersona(val || null);
+              }}
+              className="rounded border border-purple-500/40 bg-purple-500/15 px-2 py-0.5 text-purple-300 font-mono text-[10px] focus:outline-none cursor-pointer no-drag hover:bg-purple-500/25 transition-colors"
+              title="Interviewer Persona Mode: Auto-Detect or Manual Override"
+            >
+              <option value="" className="bg-neutral-900 text-purple-300">
+                ⚡ Persona: {useStore.getState().detectedPersona || "Auto"}
+              </option>
+              <option value="Executive / Director" className="bg-neutral-900 text-white">
+                🏢 Executive / Director (FinOps & ROI)
+              </option>
+              <option value="Technical Architect" className="bg-neutral-900 text-white">
+                💻 Technical Architect (Azure & Scaling)
+              </option>
+              <option value="Recruiter / HR" className="bg-neutral-900 text-white">
+                👔 Recruiter / HR (Culture & Growth)
+              </option>
+            </select>
 
             <button
               className="flex items-center gap-1 rounded bg-amber-500/15 border border-amber-500/30 px-2 py-0.5 text-[10.5px] font-semibold text-amber-400 hover:bg-amber-500/25 transition-colors no-drag"

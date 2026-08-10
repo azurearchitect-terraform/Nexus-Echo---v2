@@ -49,6 +49,7 @@ interface AppStore {
   followUps: string[];
   endInterviewQuestions: Array<{ question: string; context: string; followUpNote: string }>;
   latestCompanyIntel: CompanyIntel | null;
+  manualPersona: string | null;
 
   boot: () => Promise<void>;
   setMode: (mode: Mode) => void;
@@ -62,6 +63,7 @@ interface AppStore {
   setSpeaking: (source: "microphone" | "system", speaking: boolean) => void;
   suggest: () => Promise<void>;
   generateEndQuestions: () => Promise<void>;
+  setManualPersona: (persona: string | null) => void;
   setLatestCompanyIntel: (intel: CompanyIntel | null) => void;
   clearScreen: () => void;
   reset: () => void;
@@ -161,6 +163,8 @@ export const useStore = create<AppStore>((set, get) => ({
   endInterviewQuestions: [],
   latestCompanyIntel: null,
 
+  manualPersona: null,
+
   async boot() {
     const raw = await bridge.loadSettings();
     const parsed = raw ? AppSettings.safeParse(JSON.parse(raw)) : null;
@@ -220,7 +224,7 @@ export const useStore = create<AppStore>((set, get) => ({
       return;
     }
 
-    const persona = detectPersona(prompt);
+    const persona = get().manualPersona || detectPersona(prompt);
     set({ detectedPersona: persona });
 
     const attachments = [...get().attachments];
@@ -415,7 +419,7 @@ export const useStore = create<AppStore>((set, get) => ({
     const segments = get().segments;
     const recent = segments.slice(-3);
     const lastQuestion = recent.map((s) => s.text.trim()).filter(Boolean).join(" ") || "Live Question";
-    const persona = lastQuestion ? detectPersona(lastQuestion) : (get().detectedPersona ?? undefined);
+    const persona = get().manualPersona || (lastQuestion ? detectPersona(lastQuestion) : (get().detectedPersona ?? undefined));
     if (persona) set({ detectedPersona: persona });
 
     const answerId = uid("ans");
@@ -473,6 +477,10 @@ export const useStore = create<AppStore>((set, get) => ({
 
   clearScreen() {
     set({ answer: null, answersList: [], attachments: [], followUps: [], questionBuffer: [], segments: [], detectedPersona: null });
+  },
+
+  setManualPersona(persona) {
+    set({ manualPersona: persona, detectedPersona: persona });
   },
 
   setLatestCompanyIntel(intel: CompanyIntel | null) {
