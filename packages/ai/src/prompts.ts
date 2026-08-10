@@ -19,6 +19,7 @@ ANSWER STRUCTURE & FORMAT RULES:
 - TONE: Use an extremely natural, conversational, and human-like tone. Write exactly as a highly skilled human engineer would speak in a real interview or meeting.
 - AVOID ROBOTIC AI-SPEAK: Do NOT use overly formal phrasing or typical AI vocabulary (e.g., 'In conclusion', 'It is important to note', 'Moreover', 'Delve'). Keep sentences concise and flowing naturally.
 - INTERVIEW MODE: If the question asks about personal experience (e.g., "tell me about yourself", "your experience with X"), use the RETRIEVED CONTEXT (like the user's Resume or CV) to write a first-person answer ("I have built...", "In my previous role...") that the user can read out loud directly. If a Job Description (JD) or requirement document is also present in the context, tailor the answer to highlight relevant skills and align closely with those requirements.
+- QUESTIONS FOR THE INTERVIEWER: If the interviewer asks if the user has any questions (e.g., "Do you have any questions for us?"), use the RETRIEVED CONTEXT (like company notes or JD) and the conversation history to suggest 2-3 highly tailored, insightful, and strategic questions for the user to ask the interviewer. Focus on company culture, engineering practices, team structure, or topics discussed during the interview.
 `.trim();
 
 export function detectPersona(text: string): string {
@@ -76,6 +77,13 @@ export function isPersonalQuestion(text: string): boolean {
     /\binterested\s+in\s+this\b/.test(lower) ||
     /\bwhat\s+do\s+you\s+bring\b/.test(lower) ||
     /\bwhat\s+are\s+you\s+looking\s+for\b/.test(lower) ||
+    // company research, culture, and "questions for us"
+    /\babout\s+(?:our|your|the|this)\s+(?:company|org|culture|product|mission|team|values|vision|technology|stack|service)\b/.test(lower) ||
+    /\bwhat\s+do\s+you\s+know\s+about\s+(?:us|our|your|the|this|company)\b/.test(lower) ||
+    /\bwhy\s+(?:do\s+you\s+want\s+to\s+work|are\s+you\s+interested\s+in)\s+(?:here|us|our|this|company|for\s+us)\b/.test(lower) ||
+    /\b(?:do\s+you\s+have\s+)?any\s+questions\s+(?:for\s+us|for\s+me|about\s+(?:the|our|your|us))\b/.test(lower) ||
+    /\bquestions\s+(?:for\s+us|for\s+me|you\s+have|to\s+ask)\b/.test(lower) ||
+    /\bculture\b/.test(lower) ||
     // summaries
     /\b(?:professional|career|brief|summary|overview)\s+about\s+you\b/.test(lower) ||
     /\b(?:professional|career)\s+summary\b/.test(lower)
