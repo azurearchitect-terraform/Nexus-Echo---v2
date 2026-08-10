@@ -135,45 +135,46 @@ fn register_hotkeys(app: &tauri::AppHandle) -> tauri::Result<()> {
     // Unregister any existing shortcuts (e.g. from previous dev hot reloads)
     let _ = app.global_shortcut().unregister_all();
 
-    let handle = app.clone();
+    let base_handle = app.clone();
     for (action, modifiers, code) in HOTKEYS {
         let shortcut = Shortcut::new(Some(*modifiers), *code);
         let _ = app.global_shortcut().unregister(shortcut);
         let action_str = action.to_string();
-        let handle = handle.clone();
+        let handle_primary = base_handle.clone();
+        let handle_err = base_handle.clone();
 
         if let Err(e) = app.global_shortcut().on_shortcut(shortcut, move |_, _, event| {
             if event.state() != ShortcutState::Pressed {
                 return;
             }
-            let state = handle.state::<AppState>();
+            let state = handle_primary.state::<AppState>();
             if !state.shortcuts_enabled.load(Ordering::SeqCst) {
                 return;
             }
 
             match action_str.as_str() {
-                "panic" => stealth::panic_hide(&handle),
+                "panic" => stealth::panic_hide(&handle_primary),
                 "toggle-overlay" => {
-                    if let Some(overlay) = handle.get_webview_window("overlay") {
+                    if let Some(overlay) = handle_primary.get_webview_window("overlay") {
                         let visible = overlay.is_visible().unwrap_or(false);
                         let _ = if visible { overlay.hide() } else { overlay.show() };
                     }
                 }
                 _ => {
-                    if let Some(overlay) = handle.get_webview_window("overlay") {
+                    if let Some(overlay) = handle_primary.get_webview_window("overlay") {
                         let _ = overlay.show();
                     }
                 }
             }
             // The UI decides what each action means; Rust only routes the signal.
-            let _ = handle.emit("nexus://hotkey", action_str.clone());
+            let _ = handle_primary.emit("nexus://hotkey", action_str.clone());
         }) {
             // Hotkey reserved by another OS application (e.g. Teams/Bitwarden). Try Alt+Shift fallback
             tracing::info!("Primary shortcut reserved for {action}: {e}. Attempting Alt+Shift fallback...");
             let fallback_shortcut = Shortcut::new(Some(Modifiers::ALT.union(Modifiers::SHIFT)), *code);
             let _ = app.global_shortcut().unregister(fallback_shortcut);
             let action_str_fallback = action.to_string();
-            let handle_fallback = handle.clone();
+            let handle_fallback = handle_err;
 
             let _ = app.global_shortcut().on_shortcut(fallback_shortcut, move |_, _, event| {
                 if event.state() != ShortcutState::Pressed {
