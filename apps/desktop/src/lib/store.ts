@@ -3,6 +3,7 @@ import { detectPersona } from "@nexus/ai";
 import { AppSettings, uid, type Attachment, type TranscriptSegment, type ProviderId, type CompanyIntel } from "@nexus/core";
 import { bridge } from "./bridge";
 import { engine } from "./engine";
+import { emit, listen } from "@tauri-apps/api/event";
 
 export type Mode = "ask" | "listen" | "intel";
 
@@ -110,6 +111,12 @@ export const useStore = create<AppStore>((set, get) => ({
     } catch (e) {
       console.error("failed to load latest company intel", e);
     }
+
+    // Listen for updates from other windows
+    void listen<CompanyIntel | null>("nexus://company-intel-updated", (event) => {
+      // Avoid infinite cycles by setting state in memory only, without re-emitting
+      set({ latestCompanyIntel: event.payload });
+    });
 
     set({ settings, ready: true, latestCompanyIntel });
   },
@@ -358,8 +365,10 @@ export const useStore = create<AppStore>((set, get) => ({
   setLatestCompanyIntel(intel: CompanyIntel | null) {
     if (intel) {
       localStorage.setItem("latest_company_intel", JSON.stringify(intel));
+      void emit("nexus://company-intel-updated", intel);
     } else {
       localStorage.removeItem("latest_company_intel");
+      void emit("nexus://company-intel-updated", null);
     }
     set({ latestCompanyIntel: intel });
   },
