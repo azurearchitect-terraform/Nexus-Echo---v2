@@ -25,6 +25,7 @@ import {
   Sun,
   X,
   Zap,
+  Briefcase,
 } from "lucide-react";
 import type { RoutingMode } from "@nexus/core";
 import { useStore } from "@/lib/store";
@@ -222,6 +223,12 @@ export function Overlay() {
               active={mode === "listen"}
               onClick={() => setMode("listen")}
             />
+            <ModeTab
+              icon={<Briefcase className="h-3 w-3" />}
+              label="Intel"
+              active={mode === "intel"}
+              onClick={() => setMode("intel")}
+            />
           </div>
 
           <div className="flex flex-1 items-center gap-2.5">
@@ -359,110 +366,110 @@ export function Overlay() {
                   )}
                 </div>
               )}
+              {mode === "ask" ? (
+                answersList.length > 0 || answer ? (
+                  <div className="space-y-4 flex flex-col">
+                    {answer && !answersList.some((a) => a.id === answer.id) && (
+                      <div className="animate-fade-up border-b border-accent/20 pb-4 mb-2">
+                        {answersList.length > 0 && (
+                          <div className="mb-3 flex items-center justify-center gap-2 font-mono text-[9px] text-accent">
+                            <span className="h-1.5 w-1.5 rounded-full bg-accent animate-pulse" />
+                            <span>STREAMING ANSWER</span>
+                            <span className="h-1.5 w-1.5 rounded-full bg-accent animate-pulse" />
+                          </div>
+                        )}
 
-              {answersList.length > 0 || answer ? (
-                <div className="space-y-4 flex flex-col">
-                  {answer && !answersList.some((a) => a.id === answer.id) && (
-                    <div className="animate-fade-up border-b border-accent/20 pb-4 mb-2">
-                      {answersList.length > 0 && (
-                        <div className="mb-3 flex items-center justify-center gap-2 font-mono text-[9px] text-accent">
-                          <span className="h-1.5 w-1.5 rounded-full bg-accent animate-pulse" />
-                          <span>STREAMING ANSWER</span>
-                          <span className="h-1.5 w-1.5 rounded-full bg-accent animate-pulse" />
-                        </div>
-                      )}
+                        {answer.question && (
+                          <div className="mb-2 flex items-start justify-between text-[14px] font-medium text-white/80">
+                            <span className="font-mono text-accent">Q: {answer.question}</span>
+                            {answer.persona && (
+                              <span className="rounded bg-purple-500/15 px-1.5 py-0.5 text-[10px] text-purple-300 ml-2 shrink-0">
+                                {answer.persona}
+                              </span>
+                            )}
+                          </div>
+                        )}
 
-                      {answer.question && (
-                        <div className="mb-2 flex items-start justify-between text-[14px] font-medium text-white/80">
-                          <span className="font-mono text-accent">Q: {answer.question}</span>
-                          {answer.persona && (
-                            <span className="rounded bg-purple-500/15 px-1.5 py-0.5 text-[10px] text-purple-300 ml-2 shrink-0">
-                              {answer.persona}
+                        {answer.error ? (
+                          <p className="rounded-lg border border-danger/30 bg-danger/10 px-3 py-2 text-[12px] text-danger">
+                            {answer.error}
+                          </p>
+                        ) : (
+                          <div className="relative">
+                            <Markdown>{(streaming ? typedText : answer.text) || "…"}</Markdown>
+                            {streaming && (
+                              <span
+                                className="inline-block h-4 w-[2px] rounded-sm bg-accent align-middle ml-0.5 animate-[typewriterBlink_0.6s_ease-in-out_infinite]"
+                              />
+                            )}
+                          </div>
+                        )}
+                      </div>
+                    )}
+
+                    {[...answersList].reverse().map((item, idx) => (
+                      <div key={item.id} className="animate-fade-up pb-4 border-b border-white/5 last:border-0">
+                        {item.question && (
+                          <div className="mb-2 flex items-start justify-between text-[14px] font-medium text-white/80">
+                            <span className="font-mono text-accent">Q: {item.question}</span>
+                            {item.persona && (
+                              <span className="rounded bg-white/5 px-1.5 py-0.5 text-[10px] text-white/40 ml-2 shrink-0">
+                                {item.persona}
+                              </span>
+                            )}
+                          </div>
+                        )}
+
+                        {item.error ? (
+                          <p className="rounded-lg border border-danger/30 bg-danger/10 px-3 py-2 text-[12px] text-danger">
+                            {item.error}
+                          </p>
+                        ) : (
+                          <div className="opacity-80">
+                            <Markdown>{item.text || "…"}</Markdown>
+                          </div>
+                        )}
+
+                        {item.citations && item.citations.length > 0 && (
+                          <div className="mt-2 flex flex-wrap gap-1">
+                            {item.citations.map((c) => (
+                              <span
+                                key={c.docId}
+                                className="rounded border border-white/10 bg-white/5 px-1.5 py-0.5 text-[10px] text-white/40"
+                              >
+                                {c.title}
+                              </span>
+                            ))}
+                          </div>
+                        )}
+
+                        {item.provider && (
+                          <div className="mt-2 flex items-center justify-between font-mono text-[10px] text-white/25 no-drag">
+                            <span>
+                              {item.provider} · {item.model}
+                              {item.swapped && " · refined"}
+                              {item.latencyMs ? ` · ${formatMs(item.latencyMs)}` : ""}
                             </span>
-                          )}
-                        </div>
-                      )}
-
-                      {answer.error ? (
-                        <p className="rounded-lg border border-danger/30 bg-danger/10 px-3 py-2 text-[12px] text-danger">
-                          {answer.error}
-                        </p>
-                      ) : (
-                        <div className="relative">
-                          {/*
-                           * Typewriter render:
-                           * - While streaming:  show `typedText` (rAF char-drip) + pulsing cursor
-                           * - After streaming:  show full `answer.text` immediately (hook flushes on active=false)
-                           */}
-                          <Markdown>{(streaming ? typedText : answer.text) || "…"}</Markdown>
-                          {streaming && (
-                            <span
-                              className="inline-block h-4 w-[2px] rounded-sm bg-accent align-middle ml-0.5 animate-[typewriterBlink_0.6s_ease-in-out_infinite]"
-                            />
-                          )}
-                        </div>
-                      )}
-                    </div>
-                  )}
-
-                  {[...answersList].reverse().map((item, idx) => (
-                    <div key={item.id} className="animate-fade-up pb-4 border-b border-white/5 last:border-0">
-                      {item.question && (
-                        <div className="mb-2 flex items-start justify-between text-[14px] font-medium text-white/80">
-                          <span className="font-mono text-accent">Q: {item.question}</span>
-                          {item.persona && (
-                            <span className="rounded bg-white/5 px-1.5 py-0.5 text-[10px] text-white/40 ml-2 shrink-0">
-                              {item.persona}
-                            </span>
-                          )}
-                        </div>
-                      )}
-
-                      {item.error ? (
-                        <p className="rounded-lg border border-danger/30 bg-danger/10 px-3 py-2 text-[12px] text-danger">
-                          {item.error}
-                        </p>
-                      ) : (
-                        <div className="opacity-80">
-                          <Markdown>{item.text || "…"}</Markdown>
-                        </div>
-                      )}
-
-                      {item.citations && item.citations.length > 0 && (
-                        <div className="mt-2 flex flex-wrap gap-1">
-                          {item.citations.map((c) => (
-                            <span
-                              key={c.docId}
-                              className="rounded border border-white/10 bg-white/5 px-1.5 py-0.5 text-[10px] text-white/40"
+                            <button
+                              onClick={() => void navigator.clipboard.writeText(item.text)}
+                              className="flex items-center gap-1 rounded border border-white/10 px-1.5 py-0.5 text-white/40 hover:bg-white/10 hover:text-white transition-colors"
+                              title="Copy answer to clipboard"
                             >
-                              {c.title}
-                            </span>
-                          ))}
-                        </div>
-                      )}
-
-                      {item.provider && (
-                        <div className="mt-2 flex items-center justify-between font-mono text-[10px] text-white/25 no-drag">
-                          <span>
-                            {item.provider} · {item.model}
-                            {item.swapped && " · refined"}
-                            {item.latencyMs ? ` · ${formatMs(item.latencyMs)}` : ""}
-                          </span>
-                          <button
-                            onClick={() => void navigator.clipboard.writeText(item.text)}
-                            className="flex items-center gap-1 rounded border border-white/10 px-1.5 py-0.5 text-white/40 hover:bg-white/10 hover:text-white transition-colors"
-                            title="Copy answer to clipboard"
-                          >
-                            <Copy className="h-2.5 w-2.5" />
-                            Copy
-                          </button>
-                        </div>
-                      )}
-                    </div>
-                  ))}
-                </div>
+                              <Copy className="h-2.5 w-2.5" />
+                              Copy
+                            </button>
+                          </div>
+                        )}
+                      </div>
+                    ))}
+                  </div>
+                ) : (
+                  <EmptyState mode={mode} />
+                )
               ) : mode === "listen" ? (
                 <Transcript segments={segments} />
+              ) : mode === "intel" ? (
+                <CompanyIntelHUD />
               ) : (
                 <EmptyState mode={mode} />
               )}
@@ -792,4 +799,74 @@ async function transcribe(wavBase64: string, language: string): Promise<string> 
 
   // auto: gemini → openai → local
   return (await tryGemini()) || (await tryOpenAI()) || (await tryLocal());
+}
+
+function CompanyIntelHUD() {
+  const intel = useStore((s) => s.latestCompanyIntel);
+  const ask = useStore((s) => s.ask);
+
+  if (!intel) {
+    return (
+      <div className="flex h-full flex-col items-center justify-center text-center p-6 space-y-2">
+        <Briefcase className="h-8 w-8 text-white/20" />
+        <h4 className="text-[13px] font-semibold text-white/65">No Company Intel Loaded</h4>
+        <p className="text-[11.5px] text-white/35 max-w-[240px] leading-normal">
+          Go to the Dashboard &gt; Company Prep and investigate a company website to load strategic interview questions here.
+        </p>
+      </div>
+    );
+  }
+
+  return (
+    <div className="space-y-4 pb-4 animate-fadeIn no-drag">
+      {/* Company Name & Pitch */}
+      <div className="rounded-lg border border-amber-500/20 bg-amber-500/5 p-3 space-y-1.5">
+        <div className="flex items-center gap-1.5 text-amber-500">
+          <Briefcase className="h-3.5 w-3.5" />
+          <span className="text-[11px] font-semibold tracking-wider uppercase font-mono">Strategic Pitch ({intel.name})</span>
+        </div>
+        <p className="text-[12.5px] leading-relaxed text-amber-500/80 italic font-serif">
+          "{intel.goldenFormula}"
+        </p>
+      </div>
+
+      {/* Questions list */}
+      <div className="space-y-2.5">
+        <div className="flex items-center gap-1 text-[10px] font-mono text-white/40 uppercase tracking-widest pl-1">
+          <span>Prepared Questions (16yr Exp)</span>
+        </div>
+        {intel.questions.map((q, idx) => (
+          <div key={idx} className="rounded-lg border border-white/5 bg-white/[0.01] p-3 space-y-2 hover:border-white/10 transition-colors">
+            <div className="flex items-start gap-2">
+              <span className="flex h-4.5 w-4.5 shrink-0 items-center justify-center rounded-full bg-accent/15 text-[10px] font-semibold text-accent font-mono">
+                {idx + 1}
+              </span>
+              <h5 className="text-[12.5px] font-semibold text-white/95 leading-normal">{q.question}</h5>
+            </div>
+            
+            <p className="text-[11.5px] text-white/50 pl-6 leading-relaxed">
+              {q.context}
+            </p>
+
+            <div className="pl-6 flex flex-wrap gap-1.5">
+              {q.suggestedPoints.map((pt, pIdx) => (
+                <span key={pIdx} className="rounded border border-white/5 bg-white/[0.02] px-2 py-0.5 text-[10px] text-white/40">
+                  {pt}
+                </span>
+              ))}
+            </div>
+
+            <div className="pl-6 pt-1">
+              <button
+                onClick={() => void ask(q.question, false)}
+                className="rounded bg-accent/10 px-2 py-1 text-[10px] font-semibold text-accent hover:bg-accent/20 transition-colors"
+              >
+                Ask AI about this
+              </button>
+            </div>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
 }

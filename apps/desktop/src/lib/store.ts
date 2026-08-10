@@ -1,10 +1,10 @@
 import { create } from "zustand";
 import { detectPersona } from "@nexus/ai";
-import { AppSettings, uid, type Attachment, type TranscriptSegment, type ProviderId } from "@nexus/core";
+import { AppSettings, uid, type Attachment, type TranscriptSegment, type ProviderId, type CompanyIntel } from "@nexus/core";
 import { bridge } from "./bridge";
 import { engine } from "./engine";
 
-export type Mode = "ask" | "listen";
+export type Mode = "ask" | "listen" | "intel";
 
 export interface Answer {
   id: string;
@@ -45,6 +45,7 @@ interface AppStore {
   speakingMic: boolean;
   speakingSystem: boolean;
   followUps: string[];
+  latestCompanyIntel: CompanyIntel | null;
 
   boot: () => Promise<void>;
   setMode: (mode: Mode) => void;
@@ -57,6 +58,7 @@ interface AppStore {
   pushSegment: (segment: TranscriptSegment) => void;
   setSpeaking: (source: "microphone" | "system", speaking: boolean) => void;
   suggest: () => Promise<void>;
+  setLatestCompanyIntel: (intel: CompanyIntel | null) => void;
   clearScreen: () => void;
   reset: () => void;
 }
@@ -88,6 +90,7 @@ export const useStore = create<AppStore>((set, get) => ({
   speakingMic: false,
   speakingSystem: false,
   followUps: [],
+  latestCompanyIntel: null,
 
   async boot() {
     const raw = await bridge.loadSettings();
@@ -98,7 +101,17 @@ export const useStore = create<AppStore>((set, get) => ({
 
     await engine.configure(settings);
     await bridge.applyStealth(settings.stealth);
-    set({ settings, ready: true });
+    
+    // Load persisted company intel
+    let latestCompanyIntel: CompanyIntel | null = null;
+    try {
+      const persisted = localStorage.getItem("latest_company_intel");
+      if (persisted) latestCompanyIntel = JSON.parse(persisted);
+    } catch (e) {
+      console.error("failed to load latest company intel", e);
+    }
+
+    set({ settings, ready: true, latestCompanyIntel });
   },
 
   setMode(mode) {
@@ -340,6 +353,15 @@ export const useStore = create<AppStore>((set, get) => ({
 
   clearScreen() {
     set({ answer: null, answersList: [], attachments: [], followUps: [], questionBuffer: [], segments: [], detectedPersona: null });
+  },
+
+  setLatestCompanyIntel(intel: CompanyIntel | null) {
+    if (intel) {
+      localStorage.setItem("latest_company_intel", JSON.stringify(intel));
+    } else {
+      localStorage.removeItem("latest_company_intel");
+    }
+    set({ latestCompanyIntel: intel });
   },
 
   reset() {

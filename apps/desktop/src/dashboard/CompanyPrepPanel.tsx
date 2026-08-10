@@ -2,14 +2,17 @@ import { useState } from "react";
 import { Briefcase, Loader2, AlertCircle, Check, Send, Globe, FileText, Code2, Heart, MessageCircleQuestion } from "lucide-react";
 import { engine } from "@/lib/engine";
 import type { CompanyIntel } from "@nexus/core";
+import { useStore } from "@/lib/store";
 
 export function CompanyPrepPanel() {
+  const latestCompanyIntel = useStore((s) => s.latestCompanyIntel);
+  const setLatestCompanyIntel = useStore((s) => s.setLatestCompanyIntel);
   const [url, setUrl] = useState("");
   const [jdText, setJdText] = useState("");
   const [loading, setLoading] = useState(false);
   const [statusText, setStatusText] = useState("");
   const [error, setError] = useState<string | null>(null);
-  const [intel, setIntel] = useState<CompanyIntel | null>(null);
+  const [intel, setIntel] = useState<CompanyIntel | null>(latestCompanyIntel);
   const [savedSuccess, setSavedSuccess] = useState(false);
 
   const handleInvestigate = async (e: React.FormEvent) => {
@@ -28,6 +31,7 @@ export function CompanyPrepPanel() {
       const result = await engine.analyzeCompany(url.trim(), jdText.trim() || null);
       
       setIntel(result);
+      setLatestCompanyIntel(result);
       setStatusText("");
       setSavedSuccess(true);
       setTimeout(() => setSavedSuccess(false), 3000);
