@@ -28,6 +28,7 @@ import {
   Briefcase,
   ShieldCheck,
   Building2,
+  Trash2,
 } from "lucide-react";
 import type { RoutingMode } from "@nexus/core";
 import { useStore } from "@/lib/store";
@@ -895,9 +896,19 @@ function CompanyIntelHUD() {
     <div className="space-y-4 pb-4 animate-fadeIn no-drag">
       {/* Company Name & Pitch */}
       <div className="rounded-lg border border-amber-500/20 bg-amber-500/5 p-3 space-y-1.5">
-        <div className="flex items-center gap-1.5 text-amber-500">
-          <Briefcase className="h-3.5 w-3.5" />
-          <span className="text-[11px] font-semibold tracking-wider uppercase font-mono">Strategic Pitch ({intel.name})</span>
+        <div className="flex items-center justify-between text-amber-500">
+          <div className="flex items-center gap-1.5">
+            <Briefcase className="h-3.5 w-3.5" />
+            <span className="text-[11px] font-semibold tracking-wider uppercase font-mono">Strategic Pitch ({intel.name})</span>
+          </div>
+          <button
+            onClick={() => useStore.getState().setLatestCompanyIntel(null)}
+            className="flex items-center gap-1 rounded px-1.5 py-0.5 text-[10px] font-medium text-danger/80 hover:bg-danger/20 hover:text-danger transition-colors"
+            title="Clear this company profile"
+          >
+            <Trash2 className="h-3 w-3" />
+            Clear Intel
+          </button>
         </div>
         <p className="text-[12.5px] leading-relaxed text-amber-500/80 italic font-serif">
           "{intel.goldenFormula}"

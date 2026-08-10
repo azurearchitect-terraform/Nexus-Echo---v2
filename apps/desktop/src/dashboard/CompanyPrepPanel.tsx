@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { Briefcase, Loader2, AlertCircle, Check, Send, Globe, FileText, Code2, Heart, MessageCircleQuestion } from "lucide-react";
+import { Briefcase, Loader2, AlertCircle, Check, Send, Globe, FileText, Code2, Heart, MessageCircleQuestion, Trash2 } from "lucide-react";
 import { engine } from "@/lib/engine";
 import type { CompanyIntel } from "@nexus/core";
 import { useStore } from "@/lib/store";
@@ -135,6 +135,19 @@ export function CompanyPrepPanel() {
                 <h3 className="text-md font-semibold text-accent">{intel.name}</h3>
                 <p className="text-[11px] text-white/35 mt-0.5">Automated Intelligence Summary</p>
               </div>
+              <button
+                onClick={() => {
+                  setLatestCompanyIntel(null);
+                  setIntel(null);
+                  setUrl("");
+                  setJdText("");
+                }}
+                className="flex items-center gap-1.5 rounded-lg border border-danger/30 bg-danger/10 px-3 py-1.5 text-[11.5px] font-medium text-danger hover:bg-danger/20 transition-colors"
+                title="Delete this company profile from intel HUD and memory"
+              >
+                <Trash2 className="h-3.5 w-3.5" />
+                Delete Intel Profile
+              </button>
             </div>
 
             {/* Content fields */}
