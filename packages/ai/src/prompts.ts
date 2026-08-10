@@ -18,7 +18,7 @@ ANSWER STRUCTURE & FORMAT RULES:
 - Cut fluff, greetings, and throat-clearing ("Great question", "Sure!"). Start immediately with the answer.
 - TONE: Use an extremely natural, conversational, and human-like tone. Write exactly as a highly skilled human engineer would speak in a real interview or meeting.
 - AVOID ROBOTIC AI-SPEAK: Do NOT use overly formal phrasing or typical AI vocabulary (e.g., 'In conclusion', 'It is important to note', 'Moreover', 'Delve'). Keep sentences concise and flowing naturally.
-- INTERVIEW MODE: If the question asks about personal experience (e.g., "tell me about yourself", "your experience with X"), use the RETRIEVED CONTEXT (like the user's Resume or CV) to write a first-person answer ("I have built...", "In my previous role...") that the user can read out loud directly.
+- INTERVIEW MODE: If the question asks about personal experience (e.g., "tell me about yourself", "your experience with X"), use the RETRIEVED CONTEXT (like the user's Resume or CV) to write a first-person answer ("I have built...", "In my previous role...") that the user can read out loud directly. If a Job Description (JD) or requirement document is also present in the context, tailor the answer to highlight relevant skills and align closely with those requirements.
 `.trim();
 
 export function detectPersona(text: string): string {
@@ -49,7 +49,37 @@ export function detectPersona(text: string): string {
  */
 export function isPersonalQuestion(text: string): boolean {
   const lower = text.toLowerCase();
-  return /tell me about yourself|introduce yourself|about yourself|walk me through your|your background|your experience|your resume|your cv|your profile|previous (role|company|org|job|position)|last (role|company|org|job|position)|why should we hire|why are you a good fit|what makes you|your strengths|your weaknesses|your achievements|your accomplishments|what did you do|where did you work|where have you worked|your career|about you|describe yourself|who are you|what do you bring|your skills|your expertise|your qualifications|your education|years of experience|current role|current company|current job|your projects|worked on|your contribution|why this role|why do you want|motivation for|interested in this|fit for this|suitable for|your salary|your expectations|why are you leaving|why did you leave|what are you looking for|your hobbies|your interests|something about you|brief about you|summary about you|overview about you|professional summary|career summary/.test(lower);
+  return (
+    // "tell me / introduce ... yourself" variations
+    /\btell\s+me\s+(?:[a-z]+\s+){0,3}about\s+your\s*self\b/.test(lower) ||
+    /\bintroduce\s+your\s*self\b/.test(lower) ||
+    /\bwalk\s+me\s+through\b/.test(lower) ||
+    /\bdescribe\s+your\s*self\b/.test(lower) ||
+    // "about you / yourself / your background / resume"
+    /\babout\s+your\s*self\b/.test(lower) ||
+    /\babout\s+you\b/.test(lower) ||
+    /\bwho\s+are\s+you\b/.test(lower) ||
+    /\byour\s+(?:background|experience|resume|cv|profile|career|skills|expertise|qualifications|education|projects|contribution|salary|expectations|hobbies|interests|strengths|weaknesses|achievements|accomplishments)\b/.test(lower) ||
+    /\byour\s+last\s+(?:role|company|org|job|position|employer|workplace|firm|organization)\b/.test(lower) ||
+    // "previous / last / past / prior" roles & companies
+    /\b(?:previous|last|past|prior)\s+(?:role|company|org|job|position|experience|employer|workplace|firm|organization)\b/.test(lower) ||
+    // "what did you do" / "what you had done" / "what you did"
+    /\bwhat\s+(?:did\s+you\s+do|you\s+(?:had\s+done|have\s+done|did|'ve\s+done))\b/.test(lower) ||
+    /\bwhere\s+(?:did\s+you\s+work|have\s+you\s+worked)\b/.test(lower) ||
+    /\bworked\s+on\b/.test(lower) ||
+    // fit and motivation
+    /\bwhy\s+(?:should\s+we\s+hire|are\s+you\s+a\s+good\s+fit|this\s+role|do\s+you\s+want|are\s+you\s+leaving|did\s+you\s+leave)\b/.test(lower) ||
+    /\bwhat\s+makes\s+you\b/.test(lower) ||
+    /\bfit\s+for\b/.test(lower) ||
+    /\bsuitable\s+for\b/.test(lower) ||
+    /\bmotivation\s+for\b/.test(lower) ||
+    /\binterested\s+in\s+this\b/.test(lower) ||
+    /\bwhat\s+do\s+you\s+bring\b/.test(lower) ||
+    /\bwhat\s+are\s+you\s+looking\s+for\b/.test(lower) ||
+    // summaries
+    /\b(?:professional|career|brief|summary|overview)\s+about\s+you\b/.test(lower) ||
+    /\b(?:professional|career)\s+summary\b/.test(lower)
+  );
 }
 
 export function askSystemPrompt(userSystemPrompt: string, hits: RagHit[]): string {

@@ -94,6 +94,7 @@ export const AppSettings = z.object({
   theme: z.enum(["dark", "light", "system"]).default("dark"),
   systemPrompt: z.string().default(""),
   ragEnabled: z.boolean().default(true),
+  ragEmbedModel: z.string().optional(),
 });
 export type AppSettings = z.infer<typeof AppSettings>;
 

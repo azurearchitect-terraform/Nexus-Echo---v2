@@ -20,7 +20,7 @@ import type {
   TranscriptSegment,
   Attachment,
 } from "@nexus/core";
-import { bridge } from "./bridge";
+import { bridge, type StoredChunk } from "./bridge";
 
 /**
  * Default model assignments. `fast` is what wins races, `deep` is the quality
@@ -130,6 +130,59 @@ export class Engine {
       deleteDocument: async (docId) => bridge.deleteDocument(docId),
     });
     await this.rag.init();
+
+    // Check for embedding model mismatch (e.g. changing provider from OpenAI to Gemini)
+    const currentModel = `${embedProvider}:${model}`;
+    const previousModel = settings.ragEmbedModel;
+    const chunkCount = this.rag.chunkCount;
+
+    if (chunkCount > 0 && previousModel !== currentModel) {
+      console.warn(`[RAG] Embedding model mismatch (loaded: ${previousModel}, active: ${currentModel}). Re-embedding database chunks...`);
+      try {
+        const loadedChunks = await bridge.loadChunks();
+        const BATCH = 32;
+        const updatedChunks: StoredChunk[] = [];
+
+        for (let i = 0; i < loadedChunks.length; i += BATCH) {
+          const batch = loadedChunks.slice(i, i + BATCH);
+          const vectors = await embed(batch.map((c) => c.text));
+          batch.forEach((chunk, j) => {
+            if (vectors[j]) {
+              updatedChunks.push({
+                id: chunk.id,
+                docId: chunk.docId,
+                title: chunk.title,
+                text: chunk.text,
+                ordinal: chunk.ordinal,
+                vector: packVector(vectors[j]),
+              });
+            }
+          });
+        }
+
+        if (updatedChunks.length > 0) {
+          await bridge.saveChunks(updatedChunks);
+          // Re-initialize RAG store to load the newly saved chunks with correct vectors
+          await this.rag.init();
+          console.info(`[RAG] Re-embedding complete. Successfully migrated ${updatedChunks.length} chunks.`);
+        }
+
+        // Mutate the settings object so the React store gets the updated version
+        settings.ragEmbedModel = currentModel;
+        await bridge.saveSettings(JSON.stringify(settings));
+        this.settings = settings;
+      } catch (e) {
+        console.error("[RAG] Failed to automatically migrate chunk embeddings to new model:", e);
+      }
+    } else if (chunkCount === 0 && previousModel !== currentModel) {
+      try {
+        settings.ragEmbedModel = currentModel;
+        await bridge.saveSettings(JSON.stringify(settings));
+        this.settings = settings;
+      } catch (e) {
+        console.error("[RAG] Failed to save updated ragEmbedModel setting:", e);
+      }
+    }
   }
 
   private async keyFor(id: ProviderId): Promise<string> {
