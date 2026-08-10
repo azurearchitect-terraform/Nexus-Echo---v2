@@ -203,6 +203,13 @@ export const IntelQuestion = z.object({
 });
 export type IntelQuestion = z.infer<typeof IntelQuestion>;
 
+export const JdInterviewQuestion = z.object({
+  question: z.string(),
+  category: z.string().default("Architecture & Scenario"),
+  suggestedAnswer: z.string(),
+});
+export type JdInterviewQuestion = z.infer<typeof JdInterviewQuestion>;
+
 export const CompanyIntel = z.object({
   name: z.string(),
   coreBusiness: z.string(),
@@ -212,5 +219,6 @@ export const CompanyIntel = z.object({
   goldenFormula: z.string(),
   techStack: z.array(z.string()),
   questions: z.array(IntelQuestion),
+  jdInterviewQuestions: z.array(JdInterviewQuestion).default([]),
 });
 export type CompanyIntel = z.infer<typeof CompanyIntel>;

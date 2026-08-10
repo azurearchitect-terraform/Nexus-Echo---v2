@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { Briefcase, Loader2, AlertCircle, Check, Send, Globe, FileText, Code2, Heart, MessageCircleQuestion, Trash2 } from "lucide-react";
+import { Briefcase, Loader2, AlertCircle, Check, Send, Globe, FileText, Code2, Heart, MessageCircleQuestion, Trash2, Sparkles } from "lucide-react";
 import { engine } from "@/lib/engine";
 import type { CompanyIntel } from "@nexus/core";
 import { useStore } from "@/lib/store";
@@ -32,6 +32,15 @@ export function CompanyPrepPanel() {
       
       setIntel(result);
       setLatestCompanyIntel(result);
+
+      // Auto-sync Active Target Company & JD in settings for live overlay prompt injection
+      const { settings, saveSettings } = useStore.getState();
+      await saveSettings({
+        ...settings,
+        targetCompany: result.name,
+        targetJd: jdText.trim() ? jdText.trim() : `${result.coreBusiness}\nTech Stack: ${result.techStack.join(", ")}`,
+      });
+
       setStatusText("");
       setSavedSuccess(true);
       setTimeout(() => setSavedSuccess(false), 3000);
@@ -216,6 +225,46 @@ export function CompanyPrepPanel() {
               </div>
             </div>
           </div>
+
+          {/* Expected Interviewer Questions based on JD */}
+          {intel.jdInterviewQuestions && intel.jdInterviewQuestions.length > 0 && (
+            <div className="space-y-3 pt-2">
+              <h4 className="text-[13.5px] font-semibold text-accent flex items-center gap-1.5">
+                <Sparkles className="h-4 w-4 text-accent" /> Expected Interviewer Questions (Based on JD)
+              </h4>
+              <p className="text-[12px] text-white/40 leading-relaxed">
+                High-probability technical &amp; scenario questions the interviewer is likely to ask you based on this Job Description, along with expert answer keys:
+              </p>
+
+              <div className="space-y-3">
+                {intel.jdInterviewQuestions.map((q, idx) => (
+                  <div
+                    key={idx}
+                    className="rounded-xl border border-accent/20 bg-accent/[0.03] p-4.5 space-y-3 hover:border-accent/30 transition-colors"
+                  >
+                    <div className="flex items-start justify-between gap-2">
+                      <div className="flex items-start gap-2.5">
+                        <span className="flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-accent/20 font-mono text-[11px] font-semibold text-accent">
+                          {idx + 1}
+                        </span>
+                        <h5 className="text-[13px] font-semibold text-white/95 leading-snug">{q.question}</h5>
+                      </div>
+                      <span className="rounded border border-accent/30 bg-accent/10 px-2 py-0.5 font-mono text-[10px] text-accent shrink-0">
+                        {q.category}
+                      </span>
+                    </div>
+
+                    <div className="pl-7">
+                      <div className="rounded-lg bg-black/30 p-3 border border-white/5 space-y-1">
+                        <p className="text-[10px] text-accent/80 font-mono uppercase tracking-wider font-semibold">Suggested Answer Key</p>
+                        <p className="text-[12.5px] text-white/80 leading-relaxed">{q.suggestedAnswer}</p>
+                      </div>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
 
           {/* Discussion Questions section */}
           <div className="space-y-3">

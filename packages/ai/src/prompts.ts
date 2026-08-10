@@ -198,9 +198,16 @@ The JSON structure MUST match:
   "whyItMatters": "Connect a company challenge or goal to specific expertise in cloud infrastructure, system administration, or solution delivery.",
   "goldenFormula": "Combine the above into a concise 60-to-90-second response to 'what do you know about us'. Use the exact formula.",
   "techStack": ["Tag1", "Tag2", ...],
+  "jdInterviewQuestions": [
+    {
+      "question": "High-probability interview question the interviewer is likely to ask YOU based on this JD & tech stack",
+      "category": "Architecture / System Design / FinOps / Behavioral",
+      "suggestedAnswer": "Comprehensive, expert-level answer key covering specific technical details, architectural choices, and Azure best practices"
+    }
+  ],
   "questions": [
     {
-      "question": "Strategic question to ask the interviewer",
+      "question": "Strategic question for YOU to ask the interviewer",
       "context": "Brief context explaining why this question is highly relevant based on their tech, product, or values.",
       "suggestedPoints": ["Talking point 1", "Talking point 2"]
     }
@@ -208,9 +215,9 @@ The JSON structure MUST match:
 }
 
 Hard rules for your analysis:
-1. Provide 4-6 highly tailored, insightful, and strategic questions in the 'questions' array.
-2. At least two questions MUST be specifically tailored for a senior architect/engineer with 16 years of experience (focusing on system scaling, long-term technical debt, architectural roadmap, cloud governance, or leading and mentoring engineering teams).
-3. Connect the questions to the company's inferred technology stack or business challenges. Ensure the user can explain their own experience (e.g. cloud migration, landing zones, disaster recovery) during the discussion.
+1. Provide 5-7 realistic, high-probability interview questions in 'jdInterviewQuestions' that the interviewer will ask the candidate based on the provided Job Description requirements and company tech stack. Include strong, concrete suggested answers for each.
+2. Provide 4-6 strategic questions in the 'questions' array for the candidate to ask the interviewer.
+3. At least two questions MUST be specifically tailored for a senior architect/engineer with 16 years of experience.
 4. For the 'goldenFormula', use this exact structure:
    "I have. I know your core business focuses on [Core Product/Service] serving [Target Market]. Recently, I saw the news about your [Recent Launch/Partnership], which signals a strong push toward [Strategic Goal]. On the engineering side, I’ve been following your transition toward [Technical Detail]. Because my background is rooted heavily in architecting and delivering these exact types of scalable infrastructure solutions, I wanted to bring that expertise here to help drive that transition forward."
 5. STRICT AVOIDANCE: Do NOT recite the "About" page verbatim. Do NOT bring up controversies or stock prices (focus on tech, product, culture). Do NOT just say "I haven't had time".`,

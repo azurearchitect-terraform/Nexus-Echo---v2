@@ -879,6 +879,7 @@ async function transcribe(wavBase64: string, language: string): Promise<string> 
 function CompanyIntelHUD() {
   const intel = useStore((s) => s.latestCompanyIntel);
   const ask = useStore((s) => s.ask);
+  const [tab, setTab] = useState<"jd" | "ask">("jd");
 
   if (!intel) {
     return (
@@ -915,43 +916,98 @@ function CompanyIntelHUD() {
         </p>
       </div>
 
-      {/* Questions list */}
-      <div className="space-y-2.5">
-        <div className="flex items-center gap-1 text-[10px] font-mono text-white/40 uppercase tracking-widest pl-1">
-          <span>Prepared Questions (16yr Exp)</span>
-        </div>
-        {intel.questions.map((q, idx) => (
-          <div key={idx} className="rounded-lg border border-white/5 bg-white/[0.01] p-3 space-y-2 hover:border-white/10 transition-colors">
-            <div className="flex items-start gap-2">
-              <span className="flex h-4.5 w-4.5 shrink-0 items-center justify-center rounded-full bg-accent/15 text-[10px] font-semibold text-accent font-mono">
-                {idx + 1}
-              </span>
-              <h5 className="text-[12.5px] font-semibold text-white/95 leading-normal">{q.question}</h5>
-            </div>
-            
-            <p className="text-[11.5px] text-white/50 pl-6 leading-relaxed">
-              {q.context}
-            </p>
-
-            <div className="pl-6 flex flex-wrap gap-1.5">
-              {q.suggestedPoints.map((pt, pIdx) => (
-                <span key={pIdx} className="rounded border border-white/5 bg-white/[0.02] px-2 py-0.5 text-[10px] text-white/40">
-                  {pt}
-                </span>
-              ))}
-            </div>
-
-            <div className="pl-6 pt-1">
-              <button
-                onClick={() => void ask(q.question, false)}
-                className="rounded bg-accent/10 px-2 py-1 text-[10px] font-semibold text-accent hover:bg-accent/20 transition-colors"
-              >
-                Ask AI about this
-              </button>
-            </div>
-          </div>
-        ))}
+      {/* Tabs */}
+      <div className="flex items-center gap-1 border-b border-white/10 pb-2">
+        <button
+          onClick={() => setTab("jd")}
+          className={`px-2.5 py-1 rounded text-[11px] font-medium transition-colors ${
+            tab === "jd" ? "bg-accent/20 text-accent" : "text-white/40 hover:text-white/70"
+          }`}
+        >
+          Expected Questions (Based on JD)
+        </button>
+        <button
+          onClick={() => setTab("ask")}
+          className={`px-2.5 py-1 rounded text-[11px] font-medium transition-colors ${
+            tab === "ask" ? "bg-accent/20 text-accent" : "text-white/40 hover:text-white/70"
+          }`}
+        >
+          Questions to Ask Interviewer
+        </button>
       </div>
+
+      {/* Questions list */}
+      {tab === "jd" ? (
+        <div className="space-y-2.5">
+          {(!intel.jdInterviewQuestions || intel.jdInterviewQuestions.length === 0) ? (
+            <p className="text-[12px] text-white/40 italic p-2">No specific JD interview questions generated yet. Re-run company prep with a JD pasted.</p>
+          ) : (
+            intel.jdInterviewQuestions.map((q, idx) => (
+              <div key={idx} className="rounded-lg border border-accent/20 bg-accent/[0.02] p-3 space-y-2 hover:border-accent/40 transition-colors">
+                <div className="flex items-start justify-between gap-1.5">
+                  <div className="flex items-start gap-2">
+                    <span className="flex h-4.5 w-4.5 shrink-0 items-center justify-center rounded-full bg-accent/20 text-[10px] font-semibold text-accent font-mono">
+                      {idx + 1}
+                    </span>
+                    <h5 className="text-[12.5px] font-semibold text-white/95 leading-normal">{q.question}</h5>
+                  </div>
+                  <span className="rounded border border-accent/30 bg-accent/10 px-1.5 py-0.5 text-[9.5px] font-mono text-accent shrink-0">
+                    {q.category}
+                  </span>
+                </div>
+                
+                <div className="pl-6.5 rounded bg-black/30 p-2 border border-white/5 space-y-0.5">
+                  <span className="text-[9.5px] font-mono uppercase tracking-wider text-accent/70">Answer Key:</span>
+                  <p className="text-[11.5px] text-white/75 leading-relaxed">{q.suggestedAnswer}</p>
+                </div>
+
+                <div className="pl-6.5 pt-0.5">
+                  <button
+                    onClick={() => void ask(q.question, false)}
+                    className="rounded bg-accent/10 px-2 py-0.5 text-[10px] font-semibold text-accent hover:bg-accent/20 transition-colors"
+                  >
+                    Generate AI Response
+                  </button>
+                </div>
+              </div>
+            ))
+          )}
+        </div>
+      ) : (
+        <div className="space-y-2.5">
+          {intel.questions.map((q, idx) => (
+            <div key={idx} className="rounded-lg border border-white/5 bg-white/[0.01] p-3 space-y-2 hover:border-white/10 transition-colors">
+              <div className="flex items-start gap-2">
+                <span className="flex h-4.5 w-4.5 shrink-0 items-center justify-center rounded-full bg-accent/15 text-[10px] font-semibold text-accent font-mono">
+                  {idx + 1}
+                </span>
+                <h5 className="text-[12.5px] font-semibold text-white/95 leading-normal">{q.question}</h5>
+              </div>
+              
+              <p className="text-[11.5px] text-white/50 pl-6 leading-relaxed">
+                {q.context}
+              </p>
+
+              <div className="pl-6 flex flex-wrap gap-1.5">
+                {q.suggestedPoints.map((pt, pIdx) => (
+                  <span key={pIdx} className="rounded border border-white/5 bg-white/[0.02] px-2 py-0.5 text-[10px] text-white/40">
+                    {pt}
+                  </span>
+                ))}
+              </div>
+
+              <div className="pl-6 pt-1">
+                <button
+                  onClick={() => void ask(q.question, false)}
+                  className="rounded bg-accent/10 px-2 py-1 text-[10px] font-semibold text-accent hover:bg-accent/20 transition-colors"
+                >
+                  Ask AI about this
+                </button>
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
     </div>
   );
 }
