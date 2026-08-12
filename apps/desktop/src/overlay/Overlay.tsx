@@ -149,6 +149,8 @@ export function Overlay() {
     reset,
     setSpeakerPacing,
     stopGeneration,
+    autoSendCountdown,
+    cancelAutoSendCountdown,
   } = useStore();
 
   const [input, setInput] = useState("");
@@ -1172,7 +1174,7 @@ export function Overlay() {
                     </div>
 
                     <div className="flex items-center gap-1.5 shrink-0">
-                      {/* Action Buttons: Stop / Generate */}
+                      {/* Action Buttons: Stop / Generate / Countdown */}
                       {streaming ? (
                         <button
                           onClick={() => void stopGeneration()}
@@ -1182,8 +1184,29 @@ export function Overlay() {
                           <Square className="h-2.5 w-2.5 fill-current" />
                           <span>Stop</span>
                         </button>
+                      ) : autoSendCountdown !== null ? (
+                        <div className="flex items-center gap-1.5 font-mono text-[9px] text-amber-400 animate-pulse border border-amber-500/20 bg-amber-500/10 px-2 py-0.5 rounded-md">
+                          <span>⌛ Auto-sending in {autoSendCountdown}s...</span>
+                          <button
+                            onClick={() => {
+                              cancelAutoSendCountdown();
+                              void suggest();
+                            }}
+                            className="text-emerald-400 hover:text-emerald-300 font-bold ml-1.5 cursor-pointer underline"
+                            title="Send immediately"
+                          >
+                            Send Now
+                          </button>
+                          <button
+                            onClick={() => cancelAutoSendCountdown()}
+                            className="text-rose-400 hover:text-rose-300 font-bold ml-1.5 cursor-pointer underline"
+                            title="Hold sending"
+                          >
+                            Hold
+                          </button>
+                        </div>
                       ) : (
-                        settings.autoRespond === "manual-only" && (
+                        settings.autoRespond === "manual-only" ? (
                           <button
                             onClick={() => void suggest()}
                             className="flex items-center gap-1 rounded-md px-2 py-0.5 text-[9.5px] font-mono border border-accent/40 bg-accent/10 hover:bg-accent/20 text-accent hover:text-white transition-colors cursor-pointer"
@@ -1191,6 +1214,17 @@ export function Overlay() {
                           >
                             <Play className="h-2.5 w-2.5 fill-current" />
                             <span>Generate Answer</span>
+                          </button>
+                        ) : (
+                          // If auto-respond is active but countdown is not yet triggered (waiting for silence),
+                          // allow them to trigger immediately or cancel.
+                          <button
+                            onClick={() => void suggest()}
+                            className="flex items-center gap-1 rounded-md px-2 py-0.5 text-[9.5px] font-mono border border-accent/40 bg-accent/10 hover:bg-accent/20 text-accent hover:text-white transition-colors cursor-pointer"
+                            title="Force generate answer immediately"
+                          >
+                            <Play className="h-2.5 w-2.5 fill-current" />
+                            <span>Send Now</span>
                           </button>
                         )
                       )}

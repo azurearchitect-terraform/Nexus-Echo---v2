@@ -96,6 +96,9 @@ interface AppStore {
   reset: () => void;
   setSpeakerPacing: (pacing: SpeakerPacing, isAutoOverride?: boolean) => Promise<void>;
   stopGeneration: () => void;
+  autoSendCountdown: number | null;
+  startAutoSendCountdown: () => void;
+  cancelAutoSendCountdown: () => void;
 }
 
 const DEFAULT_SETTINGS = AppSettings.parse({
@@ -107,6 +110,7 @@ const DEFAULT_SETTINGS = AppSettings.parse({
 });
 
 let suggestDebounceTimer: ReturnType<typeof setTimeout> | null = null;
+let countdownTimer: ReturnType<typeof setInterval> | null = null;
 
 const NON_QUESTION_PHRASES = new Set([
   "hello", "hi", "hey", "thank you", "thanks", "okay", "ok", "got it", "sure",
@@ -210,6 +214,7 @@ export const useStore = create<AppStore>((set, get) => ({
   endInterviewQuestions: [],
   isGeneratingEndQuestions: false,
   latestCompanyIntel: null,
+  autoSendCountdown: null,
 
   manualPersona: null,
   interviewMode: loadInterviewMode(),
@@ -514,12 +519,20 @@ export const useStore = create<AppStore>((set, get) => ({
         confidence: null,
       }).catch(console.error);
 
-      // If the candidate starts speaking (microphone segment) and we have a pending suggestion timer,
+      // If the candidate starts speaking (microphone segment) and we have a pending suggestion or countdown,
       // it means the interviewer finished and the candidate started answering. Trigger suggest() immediately!
       if (segment.source === "microphone") {
         if (suggestDebounceTimer) {
           clearTimeout(suggestDebounceTimer);
           suggestDebounceTimer = null;
+        }
+        if (countdownTimer) {
+          clearInterval(countdownTimer);
+          countdownTimer = null;
+          set({ autoSendCountdown: null });
+          console.log("[Pacing] Candidate started speaking during countdown. Triggering suggested answer immediately!");
+          void get().suggest();
+        } else if (suggestDebounceTimer) {
           console.log("[Pacing] Candidate started speaking during pause. Triggering suggestion immediately!");
           void get().suggest();
         }
@@ -528,6 +541,12 @@ export const useStore = create<AppStore>((set, get) => ({
 
       // ONLY trigger live suggestions if auto-respond is enabled and the speaker is the interviewer ("system")
       if (get().settings.autoRespond !== "manual-only" && segment.source === "system") {
+        // Cancel active countdown if one was running (interviewer is still speaking!)
+        if (countdownTimer) {
+          clearInterval(countdownTimer);
+          countdownTimer = null;
+          set({ autoSendCountdown: null });
+        }
         if (suggestDebounceTimer) {
           clearTimeout(suggestDebounceTimer);
           suggestDebounceTimer = null;
@@ -574,7 +593,7 @@ export const useStore = create<AppStore>((set, get) => ({
         if (isIncompleteScenario(combinedText)) {
           suggestDebounceTimer = setTimeout(() => {
             suggestDebounceTimer = null;
-            void get().suggest();
+            get().startAutoSendCountdown();
           }, delay);
         } else {
           // Even if it looks complete, wait a tiny bit (800ms) in slow mode to make sure they aren't just pausing
@@ -582,10 +601,10 @@ export const useStore = create<AppStore>((set, get) => ({
           if (waitTime > 0) {
             suggestDebounceTimer = setTimeout(() => {
               suggestDebounceTimer = null;
-              void get().suggest();
+              get().startAutoSendCountdown();
             }, waitTime);
           } else {
-            void get().suggest();
+            get().startAutoSendCountdown();
           }
         }
       }
@@ -837,6 +856,10 @@ export const useStore = create<AppStore>((set, get) => ({
   },
 
   reset() {
+    if (countdownTimer) {
+      clearInterval(countdownTimer);
+      countdownTimer = null;
+    }
     set({
       answer: null,
       answersList: [],
@@ -846,10 +869,45 @@ export const useStore = create<AppStore>((set, get) => ({
       followUps: [],
       questionBuffer: [],
       detectedPersona: null,
+      autoSendCountdown: null,
     });
   },
 
   stopGeneration() {
-    set({ streaming: false, questionBuffer: [] });
+    if (countdownTimer) {
+      clearInterval(countdownTimer);
+      countdownTimer = null;
+    }
+    set({ streaming: false, questionBuffer: [], autoSendCountdown: null });
+  },
+
+  startAutoSendCountdown() {
+    if (countdownTimer) {
+      clearInterval(countdownTimer);
+      countdownTimer = null;
+    }
+    set({ autoSendCountdown: 3 });
+    countdownTimer = setInterval(() => {
+      const current = get().autoSendCountdown;
+      if (current !== null && current > 1) {
+        set({ autoSendCountdown: current - 1 });
+      } else {
+        if (countdownTimer) {
+          clearInterval(countdownTimer);
+          countdownTimer = null;
+        }
+        set({ autoSendCountdown: null });
+        void get().suggest();
+      }
+    }, 1000);
+  },
+
+  cancelAutoSendCountdown() {
+    if (countdownTimer) {
+      clearInterval(countdownTimer);
+      countdownTimer = null;
+    }
+    set({ autoSendCountdown: null });
+    console.log("[Pacing] Auto-send countdown canceled by user (Hold).");
   },
 }));
