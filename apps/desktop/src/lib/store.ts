@@ -33,6 +33,7 @@ export interface Answer {
   citations: Array<{ docId: string; title: string; score: number }>;
   verifiedSpec?: { isVerified: boolean; terms: string[] };
   error?: string;
+  isCached?: boolean;
 }
 
 interface BufferTask {
@@ -353,7 +354,7 @@ export const useStore = create<AppStore>((set, get) => ({
           case "done":
             set((s) => ({
               answer: s.answer
-                ? { ...s.answer, latencyMs: event.latencyMs, firstTokenMs: event.firstTokenMs }
+                ? { ...s.answer, latencyMs: event.latencyMs, firstTokenMs: event.firstTokenMs, isCached: (event as any).isCached }
                 : s.answer,
             }));
             break;
@@ -643,7 +644,7 @@ export const useStore = create<AppStore>((set, get) => ({
         } else if (event.type === "done") {
           set((s) => ({
             answer: s.answer
-              ? { ...s.answer, latencyMs: event.latencyMs, firstTokenMs: event.firstTokenMs }
+              ? { ...s.answer, latencyMs: event.latencyMs, firstTokenMs: event.firstTokenMs, isCached: (event as any).isCached }
               : s.answer,
           }));
         } else if (event.type === "error") {

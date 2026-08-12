@@ -11,6 +11,7 @@ import {
   Sparkles,
 } from "lucide-react";
 import { useStore } from "@/lib/store";
+import { engine } from "@/lib/engine";
 import { bridge, type Diagnostics } from "@/lib/bridge";
 import { cn } from "@/lib/cn";
 import { SettingsPanel } from "./SettingsPanel";
@@ -138,7 +139,22 @@ function DiagnosticsPanel({ diag }: { diag: Diagnostics | null }) {
         {confirming ? (
           <div className="mt-3 flex gap-2">
             <button
-              onClick={() => void bridge.wipeAllData().then(() => setConfirming(false))}
+              onClick={async () => {
+                try {
+                  await bridge.wipeAllData();
+                  localStorage.removeItem("nexus_qa_cache");
+                  localStorage.removeItem("latest_company_intel");
+                  localStorage.removeItem("story_bank");
+                  localStorage.removeItem("interview_debriefs");
+                  localStorage.removeItem("interview_mode");
+                  await engine.resetRag();
+                  useStore.getState().reset();
+                } catch (e) {
+                  console.error("Wipe failed:", e);
+                } finally {
+                  setConfirming(false);
+                }
+              }}
               className="rounded-lg bg-danger px-3 py-1.5 text-[12px] font-medium text-black"
             >
               Yes, erase it all

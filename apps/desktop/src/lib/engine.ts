@@ -300,6 +300,13 @@ export class Engine {
     return merged;
   }
 
+  async resetRag(): Promise<void> {
+    this.rag = null;
+    if (this.settings) {
+      await this.configure(this.settings);
+    }
+  }
+
   async retrieve(query: string): Promise<RagHit[]> {
     if (!this.settings?.ragEnabled || !this.rag) {
       console.debug("[RAG] Skipped: ragEnabled=", this.settings?.ragEnabled, "rag=", !!this.rag);

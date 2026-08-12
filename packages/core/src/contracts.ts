@@ -34,7 +34,7 @@ export const ProviderConfig = z.object({
 export type ProviderConfig = z.infer<typeof ProviderConfig>;
 
 export const RoutingPolicy = z.object({
-  mode: RoutingMode.default("hybrid-race"),
+  mode: RoutingMode.default("hybrid-tier"),
   primary: ProviderId.default("gemini"),
   secondary: ProviderId.default("openai"),
   /** Abort the loser of a race once the winner streams this many tokens. */

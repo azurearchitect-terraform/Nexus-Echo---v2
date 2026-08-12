@@ -51,6 +51,13 @@ pub struct VadEvent {
     pub energy: f32,
 }
 
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct AudioLevelEvent {
+    pub source: Source,
+    pub peak: f32,
+}
+
 /// Energy-gated VAD with hangover. The hangover window is what stops a natural
 /// pause mid-sentence from being cut into two utterances — the single most common
 /// cause of garbled transcripts in naive implementations.
@@ -200,6 +207,7 @@ pub fn start_stream(
 
     let app_cb = app.clone();
     let err_app = app.clone();
+    let last_level_emit = Arc::new(Mutex::new(std::time::Instant::now()));
 
     let process_samples = move |data: &[f32]| {
         if !running.load(Ordering::SeqCst) {
@@ -211,6 +219,15 @@ pub fn start_stream(
             .chunks(channels)
             .map(|c| c.iter().sum::<f32>() / channels as f32)
             .collect();
+
+        // Calculate real-time peak audio level
+        let peak = mono.iter().fold(0f32, |a, &s| a.max(s.abs()));
+        let mut last_emit = last_level_emit.lock();
+        if last_emit.elapsed().as_millis() >= 100 {
+            let _ = app_cb.emit("nexus://audio-level", AudioLevelEvent { source, peak });
+            *last_emit = std::time::Instant::now();
+        }
+
         let resampled = decimate(&mono, in_rate, TARGET_SAMPLE_RATE);
 
         let mut buf = carry.lock();

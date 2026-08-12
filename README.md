@@ -22,9 +22,9 @@ Built as a clean-room rebuild: Tauri v2 + Rust for the shell, React 18 + TypeScr
 
 Set in **Dashboard → Providers & routing**.
 
-**`hybrid-race`** — both providers fire simultaneously; first token wins, loser is cancelled. Fastest possible perceived latency. This is the default.
+**`hybrid-race`** — both providers fire simultaneously; first token wins, loser is cancelled. Fastest possible perceived latency.
 
-**`hybrid-tier`** — the fast model answers in ~300 ms so you always have something to say; the deep model works in the background and silently replaces the answer when it lands.
+**`hybrid-tier`** — the fast model answers in ~300 ms so you always have something to say; the deep model works in the background and silently replaces the answer when it lands. This is the default.
 
 **`single`** — one provider, no fan-out. Predictable cost.
 
