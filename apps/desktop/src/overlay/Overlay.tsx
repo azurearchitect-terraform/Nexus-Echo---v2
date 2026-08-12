@@ -170,7 +170,7 @@ export function Overlay() {
 
   // Smooth character-drip typewriter for the live streaming answer.
   // Architecture: rAF loop drains pending chars at 3 chars/frame — no setTimeout jitter.
-  const typedText = useTypewriter(answer?.text ?? "", streaming, 3);
+  const typedText = useTypewriter(answer?.text ?? "", streaming, 6);
 
   // ---- hotkeys from the Rust side -------------------------------------------
   useEffect(() => {
@@ -888,7 +888,7 @@ export function Overlay() {
                           </p>
                         ) : (
                           <div className="relative group">
-                            <Markdown style={{ fontSize: `${answerFontSize}px` }}>{answer?.text || "…"}</Markdown>
+                            <Markdown style={{ fontSize: `${answerFontSize}px` }}>{(streaming ? typedText : answer?.text) || "…"}</Markdown>
                             {streaming && (
                               <span
                                 className="inline-block h-4 w-[2px] rounded-sm bg-accent align-middle ml-0.5 animate-[typewriterBlink_0.6s_ease-in-out_infinite]"
@@ -935,7 +935,9 @@ export function Overlay() {
                           </p>
                         ) : (
                           <div className="opacity-80 relative group">
-                            <Markdown style={{ fontSize: `${answerFontSize}px` }}>{item.text || "…"}</Markdown>
+                            <Markdown style={{ fontSize: `${answerFontSize}px` }}>
+                              {(streaming && item.id === answer?.id ? typedText : item.text) || "…"}
+                            </Markdown>
                             <div className="absolute -top-2 -right-2 opacity-0 group-hover:opacity-100 transition-opacity">
                               <CopyButton text={item.text} />
                             </div>
