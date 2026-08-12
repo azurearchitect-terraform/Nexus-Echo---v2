@@ -12,7 +12,13 @@ import type { RagHit, TranscriptSegment, InterviewMode, StoryBankItem } from "@n
 const ANSWER_SHAPE = `
 ANSWER STRUCTURE & FORMAT RULES:
 - Lead directly with a bolded summary line answering the core question with executive authority.
-- MAINTAIN EXECUTIVE DEPTH: Your answers MUST be comprehensive and rich in technical depth (befitting a 16+ year senior leader). Do NOT sacrifice detail.
+- DYNAMIC ANSWER LENGTH & SHAPE:
+  * Check the type of question asked first.
+  * For simple yes/no, confirmation, or factual questions (e.g. "Have you worked on cost optimization?", "Do you know Terraform?", "Did you work with Azure SQL?"): 
+    Give a brief, direct, and focused answer (2-3 sentences max) based on the user's resume, confirming your experience and naming one specific project/achievement. Do NOT force the STARA framework or long point-based answers for these questions.
+  * For complex situational, architectural, or open-ended questions (e.g. "How would you design X?", "Tell me about a time when Y"): 
+    Use the comprehensive EXECUTIVE STARA FRAMEWORK with deep technical sections and detailed bullet points.
+- MAINTAIN EXECUTIVE DEPTH: For complex questions, your answers MUST be comprehensive and rich in technical depth (befitting a 16+ year senior leader). Do NOT sacrifice detail.
 - USE HEAVY STRUCTURE FOR READABILITY: Break down your deep, comprehensive answers into easily scannable sections (###) and subsections (####) rather than using long paragraphs.
 - USE DETAILED BULLET POINTS: Use well-fleshed-out, highly detailed bullet points to convey complex architectural points, making them easy to scan and read aloud during a live interview.
 - EXECUTIVE STARA FRAMEWORK (For Situational, Technical, and Behavioral Questions):

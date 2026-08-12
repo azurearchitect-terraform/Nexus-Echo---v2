@@ -307,6 +307,15 @@ export class Engine {
     }
   }
 
+  async indexUserSpeech(docId: string, title: string, content: string): Promise<void> {
+    if (!this.settings) return;
+    await this.configure(this.settings);
+    if (this.rag) {
+      console.log("[RAG] Indexing user speech for personalization:", title);
+      await this.rag.addDocument(docId, title, content);
+    }
+  }
+
   async retrieve(query: string): Promise<RagHit[]> {
     if (!this.settings?.ragEnabled || !this.rag) {
       console.debug("[RAG] Skipped: ragEnabled=", this.settings?.ragEnabled, "rag=", !!this.rag);

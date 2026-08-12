@@ -432,6 +432,18 @@ export const useStore = create<AppStore>((set, get) => ({
         participants: JSON.stringify(summary.participants),
       });
       void emit("nexus://meeting-finalized", { meetingId, summary });
+
+      // Index the user's spoken answers into RAG so the system learns their style!
+      const userSpokenText = segments
+        .filter((s) => s.source === "microphone" && s.text.trim().length > 10)
+        .map((s) => s.text.trim())
+        .join("\n\n");
+      
+      if (userSpokenText) {
+        const docId = `user_speech_${meetingId}`;
+        const title = `User Spoken Answers (${summary.title || "Untitled"})`;
+        void engine.indexUserSpeech(docId, title, userSpokenText).catch(console.error);
+      }
     }
     set({ meetingId: null });
   },
