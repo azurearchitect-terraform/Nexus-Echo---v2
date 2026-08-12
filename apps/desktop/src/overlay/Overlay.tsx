@@ -146,6 +146,7 @@ export function Overlay() {
     addAttachment,
     clearAttachments,
     reset,
+    setSpeakerPacing,
   } = useStore();
 
   const [input, setInput] = useState("");
@@ -484,6 +485,19 @@ export function Overlay() {
                 <option value="gemini">♊ Gemini STT</option>
                 <option value="openai-whisper">💬 Whisper API</option>
                 <option value="local-whisper">💻 Local Whisper</option>
+              </select>
+
+              {/* Quick Speaker Pacing Selector */}
+              <select
+                value={settings.audio.speakerPacing ?? "normal"}
+                onChange={(e) => void setSpeakerPacing(e.target.value as any)}
+                className="rounded-md border border-white/20 bg-neutral-900/90 px-1 py-0.5 font-mono text-[9.5px] text-white shadow-sm hover:border-accent/60 focus:outline-none cursor-pointer [color-scheme:dark]"
+                title="Speaker Pacing / Silence timeout before suggested answers"
+              >
+                <option value="auto">⏱️ Auto Pacing</option>
+                <option value="fast">⚡ Fast Speaker</option>
+                <option value="normal">⚖️ Normal Speaker</option>
+                <option value="slow">🐌 Slow Speaker</option>
               </select>
 
               {/* Quick Primary Provider Switcher */}

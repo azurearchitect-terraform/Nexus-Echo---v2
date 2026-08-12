@@ -65,6 +65,9 @@ export const StealthConfig = z.object({
 });
 export type StealthConfig = z.infer<typeof StealthConfig>;
 
+export const SpeakerPacing = z.enum(["auto", "fast", "normal", "slow"]);
+export type SpeakerPacing = z.infer<typeof SpeakerPacing>;
+
 export const AudioConfig = z.object({
   captureMicrophone: z.boolean().default(false),
   captureSystemAudio: z.boolean().default(true),
@@ -79,6 +82,7 @@ export const AudioConfig = z.object({
   language: z.string().default("auto"),
   /** Which STT engine to use: auto = try gemini then openai then local */
   sttEngine: z.enum(["auto", "gemini", "openai-whisper", "local-whisper"]).default("auto"),
+  speakerPacing: SpeakerPacing.default("normal"),
 });
 export type AudioConfig = z.infer<typeof AudioConfig>;
 

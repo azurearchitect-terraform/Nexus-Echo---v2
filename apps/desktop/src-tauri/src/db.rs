@@ -172,7 +172,7 @@ impl Db {
 
     pub fn create_meeting(&self, id: &str, title: &str) -> Result<()> {
         self.0.lock().execute(
-            "INSERT INTO meetings(id, title, started_at) VALUES(?1, ?2, ?3)",
+            "INSERT OR IGNORE INTO meetings(id, title, started_at) VALUES(?1, ?2, ?3)",
             params![id, title, chrono::Utc::now().timestamp_millis()],
         )?;
         Ok(())

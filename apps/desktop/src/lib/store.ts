@@ -1,6 +1,6 @@
 import { create } from "zustand";
 import { detectPersona } from "@nexus/ai";
-import { AppSettings, uid, type Attachment, type TranscriptSegment, type ProviderId, type CompanyIntel } from "@nexus/core";
+import { AppSettings, uid, type Attachment, type TranscriptSegment, type ProviderId, type CompanyIntel, type SpeakerPacing } from "@nexus/core";
 import { bridge } from "./bridge";
 import { engine, verifyAzureSpecs } from "./engine";
 import { emit, listen } from "@tauri-apps/api/event";
@@ -94,6 +94,7 @@ interface AppStore {
   setLatestCompanyIntel: (intel: CompanyIntel | null) => void;
   clearScreen: () => void;
   reset: () => void;
+  setSpeakerPacing: (pacing: SpeakerPacing, isAutoOverride?: boolean) => Promise<void>;
 }
 
 const DEFAULT_SETTINGS = AppSettings.parse({
@@ -404,6 +405,13 @@ export const useStore = create<AppStore>((set, get) => ({
   async startListening() {
     const { settings } = get();
     const meetingId = uid("meet");
+
+    let silenceMs = settings.audio.vadSilenceMs;
+    const pacing = settings.audio.speakerPacing ?? "normal";
+    if (pacing === "fast") silenceMs = 350;
+    else if (pacing === "slow") silenceMs = 1500;
+    else if (pacing === "auto") silenceMs = 800; // Auto starts at 800ms and adapts
+
     await bridge.startListening({
       meetingId,
       captureMicrophone: settings.audio.captureMicrophone,
@@ -411,7 +419,7 @@ export const useStore = create<AppStore>((set, get) => ({
       ...(settings.audio.micDeviceId ? { micDeviceId: settings.audio.micDeviceId } : {}),
       ...(settings.audio.systemDeviceId ? { systemDeviceId: settings.audio.systemDeviceId } : {}),
       vadThreshold: settings.audio.vadThreshold,
-      vadSilenceMs: settings.audio.vadSilenceMs,
+      vadSilenceMs: silenceMs,
     });
     set({ listening: true, meetingId, segments: [], mode: "listen", followUps: [] });
   },
@@ -448,6 +456,46 @@ export const useStore = create<AppStore>((set, get) => ({
     set({ meetingId: null });
   },
 
+  async setSpeakerPacing(pacing, isAutoOverride = false) {
+    const { settings, listening, meetingId } = get();
+    
+    // Preserve "auto" configuration settings when dynamically overriding VAD parameters
+    const targetPacing = isAutoOverride ? "auto" : pacing;
+    
+    const updatedSettings = {
+      ...settings,
+      audio: {
+        ...settings.audio,
+        speakerPacing: targetPacing,
+      },
+    };
+    set({ settings: updatedSettings });
+    await bridge.saveSettings(JSON.stringify(updatedSettings));
+
+    // If currently listening, swap the VAD parameters dynamically without restarting the meeting session
+    if (listening && meetingId) {
+      await bridge.stopListening();
+      
+      let silenceMs = settings.audio.vadSilenceMs;
+      // Use the actual target pacing (e.g. slow) if we are dynamically overriding in auto mode
+      const activePacing = isAutoOverride ? pacing : targetPacing;
+      if (activePacing === "fast") silenceMs = 350;
+      else if (activePacing === "slow") silenceMs = 1500;
+      else if (activePacing === "auto") silenceMs = 800;
+
+      await bridge.startListening({
+        meetingId,
+        captureMicrophone: settings.audio.captureMicrophone,
+        captureSystemAudio: settings.audio.captureSystemAudio,
+        ...(settings.audio.micDeviceId ? { micDeviceId: settings.audio.micDeviceId } : {}),
+        ...(settings.audio.systemDeviceId ? { systemDeviceId: settings.audio.systemDeviceId } : {}),
+        vadThreshold: settings.audio.vadThreshold,
+        vadSilenceMs: silenceMs,
+      });
+      console.log(`[Pacing] Swapped VAD silence threshold dynamically to: ${silenceMs}ms (${activePacing})`);
+    }
+  },
+
   pushSegment(segment) {
     set((s) => ({ segments: [...s.segments, segment] }));
     if (segment.isFinal) {
@@ -463,6 +511,18 @@ export const useStore = create<AppStore>((set, get) => ({
         source: segment.source,
         confidence: null,
       }).catch(console.error);
+
+      // If the candidate starts speaking (microphone segment) and we have a pending suggestion timer,
+      // it means the interviewer finished and the candidate started answering. Trigger suggest() immediately!
+      if (segment.source === "microphone") {
+        if (suggestDebounceTimer) {
+          clearTimeout(suggestDebounceTimer);
+          suggestDebounceTimer = null;
+          console.log("[Pacing] Candidate started speaking during pause. Triggering suggestion immediately!");
+          void get().suggest();
+        }
+        return; // Candidate speaking does not trigger new suggestions
+      }
 
       // ONLY trigger live suggestions if auto-respond is enabled and the speaker is the interviewer ("system")
       if (get().settings.autoRespond !== "manual-only" && segment.source === "system") {
@@ -483,14 +543,48 @@ export const useStore = create<AppStore>((set, get) => ({
           return; // Ignore notification noise, casual remarks, non-questions
         }
 
+        // Auto-pacing detection: if the interviewer has consecutive segments within 3 seconds,
+        // and we are in "auto" pacing mode, dynamically adjust VAD silence threshold to "slow"
+        const settings = get().settings;
+        if (settings.audio.speakerPacing === "auto") {
+          const systemSegments = get().segments.filter((s) => s.source === "system");
+          if (systemSegments.length >= 2) {
+            const last = systemSegments[systemSegments.length - 1];
+            const prev = systemSegments[systemSegments.length - 2];
+            if (last && prev) {
+              const gap = last.startMs - prev.endMs;
+              // If they pause for 800ms - 3000ms and continue, they are a slow speaker!
+              if (gap > 800 && gap < 3000) {
+                console.log("[Pacing] Slow speaker detected dynamically (gap = " + gap + "ms). Switching to slow pacing.");
+                void get().setSpeakerPacing("slow", true); // Dynamic override
+              }
+            }
+          }
+        }
+
+        // Determine debounce delay based on speaker pacing setting
+        let delay = 1600; // default for normal
+        const pacing = settings.audio.speakerPacing;
+        if (pacing === "fast") delay = 800;
+        else if (pacing === "slow") delay = 2500;
+        else if (pacing === "auto") delay = 2000;
+
         if (isIncompleteScenario(combinedText)) {
-          // Speaker paused mid-scenario — wait 1600ms for them to complete before generating
           suggestDebounceTimer = setTimeout(() => {
             suggestDebounceTimer = null;
             void get().suggest();
-          }, 1600);
+          }, delay);
         } else {
-          void get().suggest();
+          // Even if it looks complete, wait a tiny bit (800ms) in slow mode to make sure they aren't just pausing
+          const waitTime = pacing === "slow" ? 800 : 0;
+          if (waitTime > 0) {
+            suggestDebounceTimer = setTimeout(() => {
+              suggestDebounceTimer = null;
+              void get().suggest();
+            }, waitTime);
+          } else {
+            void get().suggest();
+          }
         }
       }
     }
