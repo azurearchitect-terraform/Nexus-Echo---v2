@@ -95,6 +95,7 @@ interface AppStore {
   clearScreen: () => void;
   reset: () => void;
   setSpeakerPacing: (pacing: SpeakerPacing, isAutoOverride?: boolean) => Promise<void>;
+  stopGeneration: () => void;
 }
 
 const DEFAULT_SETTINGS = AppSettings.parse({
@@ -323,6 +324,7 @@ export const useStore = create<AppStore>((set, get) => ({
         attachments,
         get().settings.ragEnabled,
       )) {
+        if (!get().streaming) break;
         switch (event.type) {
           case "start":
             set((s) => ({
@@ -704,6 +706,7 @@ export const useStore = create<AppStore>((set, get) => ({
     
     try {
       for await (const event of engine.generateCoachingTip(segments)) {
+        if (!get().streaming) break;
         if (event.type === "token") {
           set((s) => ({ answer: s.answer ? { ...s.answer, text: s.answer.text + event.delta } : s.answer }));
         } else if (event.type === "start") {
@@ -750,6 +753,7 @@ export const useStore = create<AppStore>((set, get) => ({
     });
     try {
       for await (const event of engine.suggest(segments)) {
+        if (!get().streaming) break;
         if (event.type === "token") {
           set((s) => ({ answer: s.answer ? { ...s.answer, text: s.answer.text + event.delta } : s.answer }));
         } else if (event.type === "swap") {
@@ -843,5 +847,9 @@ export const useStore = create<AppStore>((set, get) => ({
       questionBuffer: [],
       detectedPersona: null,
     });
+  },
+
+  stopGeneration() {
+    set({ streaming: false, questionBuffer: [] });
   },
 }));
