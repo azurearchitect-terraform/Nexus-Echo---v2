@@ -1435,6 +1435,8 @@ async function transcribe(wavBase64: string, language: string): Promise<string> 
       new Set([gemini.models?.fast || "gemini-3.5-flash", "gemini-3.6-flash", "gemini-3.5-flash"])
     );
     for (const model of candidateModels) {
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => controller.abort(), 3500);
       try {
         const res = await fetch(
           `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${apiKey}`,
@@ -1449,8 +1451,10 @@ async function transcribe(wavBase64: string, language: string): Promise<string> 
                 ],
               }],
             }),
+            signal: controller.signal,
           },
         );
+        clearTimeout(timeoutId);
         if (res.ok) {
           const json = (await res.json()) as any;
           const text = json.candidates?.[0]?.content?.parts?.[0]?.text;
@@ -1460,7 +1464,8 @@ async function transcribe(wavBase64: string, language: string): Promise<string> 
           errors.push(`Gemini HTTP ${res.status}: ${errText}`);
         }
       } catch (e: any) {
-        errors.push(`Gemini network: ${e.message || String(e)}`);
+        clearTimeout(timeoutId);
+        errors.push(`Gemini network: ${e.name === "AbortError" ? "Timeout after 3.5s" : e.message || String(e)}`);
       }
     }
     return "";
@@ -1477,6 +1482,8 @@ async function transcribe(wavBase64: string, language: string): Promise<string> 
       errors.push("OpenAI API Key missing.");
       return "";
     }
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), 3500);
     try {
       const binary = atob(wavBase64);
       const bytes = new Uint8Array(binary.length);
@@ -1489,7 +1496,9 @@ async function transcribe(wavBase64: string, language: string): Promise<string> 
         method: "POST",
         headers: { Authorization: `Bearer ${apiKey}` },
         body: form,
+        signal: controller.signal,
       });
+      clearTimeout(timeoutId);
       if (res.ok) {
         const json = (await res.json()) as any;
         if (json.text?.trim()) return json.text.trim();
@@ -1498,18 +1507,23 @@ async function transcribe(wavBase64: string, language: string): Promise<string> 
         errors.push(`OpenAI HTTP ${res.status}: ${errText}`);
       }
     } catch (e: any) {
-      errors.push(`OpenAI network: ${e.message || String(e)}`);
+      clearTimeout(timeoutId);
+      errors.push(`OpenAI network: ${e.name === "AbortError" ? "Timeout after 3.5s" : e.message || String(e)}`);
     }
     return "";
   };
 
   const tryLocal = async (): Promise<string> => {
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), 3500);
     try {
       const res = await fetch("http://127.0.0.1:8080/inference", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ audio: wavBase64, language }),
+        signal: controller.signal,
       });
+      clearTimeout(timeoutId);
       if (res.ok) {
         const json = (await res.json()) as any;
         if (json.text?.trim()) return json.text.trim();
@@ -1517,7 +1531,8 @@ async function transcribe(wavBase64: string, language: string): Promise<string> 
         errors.push(`Local Whisper HTTP ${res.status}`);
       }
     } catch (e: any) {
-      errors.push(`Local Whisper connection failed: ${e.message || String(e)}`);
+      clearTimeout(timeoutId);
+      errors.push(`Local Whisper connection failed: ${e.name === "AbortError" ? "Timeout after 3.5s" : e.message || String(e)}`);
     }
     return "";
   };

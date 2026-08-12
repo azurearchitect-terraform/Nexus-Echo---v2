@@ -438,32 +438,48 @@ export const useStore = create<AppStore>((set, get) => ({
 
   pushSegment(segment) {
     set((s) => ({ segments: [...s.segments, segment] }));
-    if (segment.isFinal && get().settings.autoRespond !== "manual-only") {
-      if (suggestDebounceTimer) {
-        clearTimeout(suggestDebounceTimer);
-        suggestDebounceTimer = null;
-      }
+    if (segment.isFinal) {
+      // Save segment to database so meeting transcripts are persisted
+      void bridge.saveSegment({
+        id: segment.id,
+        meetingId: segment.meetingId,
+        speaker: segment.speaker,
+        speakerKey: null,
+        text: segment.text,
+        startMs: segment.startMs,
+        endMs: segment.endMs,
+        source: segment.source,
+        confidence: null,
+      }).catch(console.error);
 
-      const recentSegments = get().segments.slice(-3);
-      const combinedText = recentSegments.map((s) => s.text).join(" ");
-
-      // Auto-trigger end-of-interview candidate questions when interviewer asks "do you have any questions for us?"
-      if (/do you have any questions|any questions for (us|me|our team)|any questions from your/i.test(combinedText)) {
-        void get().generateEndQuestions();
-      }
-
-      if (!isActionableQuestion(combinedText)) {
-        return; // Ignore notification noise, casual remarks, non-questions
-      }
-
-      if (isIncompleteScenario(combinedText)) {
-        // Speaker paused mid-scenario — wait 1600ms for them to complete before generating
-        suggestDebounceTimer = setTimeout(() => {
+      // ONLY trigger live suggestions if auto-respond is enabled and the speaker is the interviewer ("system")
+      if (get().settings.autoRespond !== "manual-only" && segment.source === "system") {
+        if (suggestDebounceTimer) {
+          clearTimeout(suggestDebounceTimer);
           suggestDebounceTimer = null;
+        }
+
+        const recentSegments = get().segments.slice(-3);
+        const combinedText = recentSegments.map((s) => s.text).join(" ");
+
+        // Auto-trigger end-of-interview candidate questions when interviewer asks "do you have any questions for us?"
+        if (/do you have any questions|any questions for (us|me|our team)|any questions from your/i.test(combinedText)) {
+          void get().generateEndQuestions();
+        }
+
+        if (!isActionableQuestion(combinedText)) {
+          return; // Ignore notification noise, casual remarks, non-questions
+        }
+
+        if (isIncompleteScenario(combinedText)) {
+          // Speaker paused mid-scenario — wait 1600ms for them to complete before generating
+          suggestDebounceTimer = setTimeout(() => {
+            suggestDebounceTimer = null;
+            void get().suggest();
+          }, 1600);
+        } else {
           void get().suggest();
-        }, 1600);
-      } else {
-        void get().suggest();
+        }
       }
     }
   },
@@ -658,6 +674,22 @@ export const useStore = create<AppStore>((set, get) => ({
         set((s) => ({
           answersList: [...s.answersList.filter((a) => a.id !== final.id), verifiedAnswer],
         }));
+
+        // Save the generated suggestion to SQLite!
+        void bridge.saveMessage({
+          id: final.id,
+          conversationId: get().conversationId,
+          role: "assistant",
+          content: final.text,
+          attachments: JSON.stringify([]),
+          citations: JSON.stringify(final.citations),
+          provider: final.provider ?? null,
+          model: final.model ?? null,
+          latencyMs: final.latencyMs != null ? Math.round(final.latencyMs) : null,
+          firstTokenMs: final.firstTokenMs != null ? Math.round(final.firstTokenMs) : null,
+          createdAt: Date.now(),
+        }).catch(console.error);
+
         void get().analyzeInterviewTurn(lastQuestion, final.text, segments.map((segment) => `${segment.speaker}: ${segment.text}`).join("\n"));
       }
       // Follow-up generation disabled for clean UI
