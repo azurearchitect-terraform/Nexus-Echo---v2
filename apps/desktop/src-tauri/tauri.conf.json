@@ -1,10 +1,10 @@
 {
   "$schema": "https://schema.tauri.app/config/2",
   "productName": "Nexus-Echo-V2",
-  "version": "2.0.0",
+  "version": "2.0.1",
   "identifier": "ai.nexusecho.desktop",
   "build": {
-    "beforeDevCommand": "pnpm vite dev",
+    "beforeDevCommand": "node ../../scripts/ensure-dev-port.mjs 1420 && pnpm vite dev",
     "devUrl": "http://localhost:1420",
     "beforeBuildCommand": "pnpm vite build",
     "frontendDist": "../dist"
@@ -50,12 +50,6 @@
     "security": {
       "csp": "default-src 'self'; img-src 'self' asset: data: blob: https:; style-src 'self' 'unsafe-inline'; script-src 'self'; connect-src 'self' ipc: http://ipc.localhost https://api.openai.com https://generativelanguage.googleapis.com http://127.0.0.1:11434 http://localhost:11434",
       "assetProtocol": { "enable": true, "scope": ["$APPDATA/**", "$TEMP/**"] }
-    },
-    "trayIcon": {
-      "id": "nexus-tray",
-      "iconPath": "icons/tray.png",
-      "iconAsTemplate": true,
-      "tooltip": "Nexus-Echo-V2"
     }
   },
   "bundle": {

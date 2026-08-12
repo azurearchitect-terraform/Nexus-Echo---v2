@@ -83,6 +83,78 @@ export const AudioConfig = z.object({
 export type AudioConfig = z.infer<typeof AudioConfig>;
 
 export const AutoRespondTrigger = z.enum(["question-detected", "every-pause", "manual-only"]);
+export type AutoRespondTrigger = z.infer<typeof AutoRespondTrigger>;
+
+export const InterviewMode = z.enum([
+  "mixed",
+  "behavioral",
+  "technical",
+  "system-design",
+  "hr",
+  "recruiter",
+  "leadership",
+]);
+export type InterviewMode = z.infer<typeof InterviewMode>;
+
+export const StoryBankItem = z.object({
+  id: z.string(),
+  title: z.string(),
+  summary: z.string(),
+  situation: z.string().default(""),
+  task: z.string().default(""),
+  action: z.string().default(""),
+  result: z.string().default(""),
+  metrics: z.array(z.string()).default([]),
+  tags: z.array(z.string()).default([]),
+  roleFocus: InterviewMode.default("mixed"),
+  createdAt: z.number(),
+});
+export type StoryBankItem = z.infer<typeof StoryBankItem>;
+
+export const CoverageChecklistItem = z.object({
+  label: z.string(),
+  covered: z.boolean(),
+  note: z.string().default(""),
+});
+export type CoverageChecklistItem = z.infer<typeof CoverageChecklistItem>;
+
+export const FollowUpPrediction = z.object({
+  question: z.string(),
+  reason: z.string().default(""),
+  priority: z.enum(["high", "medium", "low"]).default("medium"),
+});
+export type FollowUpPrediction = z.infer<typeof FollowUpPrediction>;
+
+export const InterviewCoachInsight = z.object({
+  summary: z.string(),
+  overallScore: z.number().min(0).max(100),
+  structureScore: z.number().min(0).max(100),
+  clarityScore: z.number().min(0).max(100),
+  specificityScore: z.number().min(0).max(100),
+  confidenceScore: z.number().min(0).max(100),
+  strengths: z.array(z.string()).default([]),
+  gaps: z.array(z.string()).default([]),
+  coachingTip: z.string().default(""),
+  nextBestMove: z.string().default(""),
+  suggestedStoryTags: z.array(z.string()).default([]),
+  checklist: z.array(CoverageChecklistItem).default([]),
+  likelyFollowUps: z.array(FollowUpPrediction).default([]),
+  storyMatchHint: z.string().optional(),
+});
+export type InterviewCoachInsight = z.infer<typeof InterviewCoachInsight>;
+
+export const InterviewDebrief = z.object({
+  question: z.string(),
+  answer: z.string(),
+  mode: InterviewMode.default("mixed"),
+  summary: z.string(),
+  strengths: z.array(z.string()).default([]),
+  improvements: z.array(z.string()).default([]),
+  followUps: z.array(z.string()).default([]),
+  storyTitle: z.string().optional(),
+  createdAt: z.number(),
+});
+export type InterviewDebrief = z.infer<typeof InterviewDebrief>;
 
 export const AppSettings = z.object({
   routing: RoutingPolicy.default({}),
@@ -96,6 +168,8 @@ export const AppSettings = z.object({
   targetCompany: z.string().default(""),
   targetJd: z.string().default(""),
   answerFormat: z.enum(["stara", "concise", "detailed"]).default("stara"),
+  interviewMode: InterviewMode.default("mixed"),
+  accentColor: z.string().default("#6ee7b7"),
   ragEnabled: z.boolean().default(true),
   ragEmbedModel: z.string().optional(),
 });
@@ -201,6 +275,8 @@ export const IntelQuestion = z.object({
   question: z.string(),
   context: z.string(),
   suggestedPoints: z.array(z.string()),
+  expectedAnswer: z.string().optional(),
+  professionalExample: z.string().optional(),
 });
 export type IntelQuestion = z.infer<typeof IntelQuestion>;
 
@@ -221,5 +297,7 @@ export const CompanyIntel = z.object({
   techStack: z.array(z.string()).default([]),
   questions: z.array(IntelQuestion).default([]),
   jdInterviewQuestions: z.array(JdInterviewQuestion).default([]),
+  hrQuestions: z.array(IntelQuestion).default([]),
+  salaryNegotiationStrategy: z.string().default(""),
 });
 export type CompanyIntel = z.infer<typeof CompanyIntel>;

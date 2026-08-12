@@ -279,14 +279,105 @@ impl Db {
 
     /// Irreversible. Exposed in Settings as "Erase everything".
     pub fn wipe(&self) -> Result<()> {
-        self.0
-            .lock()
-            .execute_batch(
-                "DELETE FROM messages; DELETE FROM conversations; DELETE FROM transcript_segments;
-                 DELETE FROM meetings; DELETE FROM chunks; DELETE FROM documents; DELETE FROM search_fts;",
-            )
-            .map_err(|e| anyhow!("wipe failed: {e}"))?;
+        let conn = self.0.lock();
+        conn.execute_batch(
+            "DELETE FROM messages;
+             DELETE FROM conversations;
+             DELETE FROM transcript_segments;
+             DELETE FROM meetings;
+             DELETE FROM chunks;
+             DELETE FROM documents;
+             DELETE FROM search_fts;
+             VACUUM;",
+        ).map_err(|e| anyhow!("wipe failed: {e}"))?;
         Ok(())
+    }
+
+    pub fn get_all_settings(&self) -> Result<std::collections::HashMap<String, String>> {
+        let conn = self.0.lock();
+        let mut stmt = conn.prepare("SELECT key, value FROM settings")?;
+        let rows = stmt.query_map([], |r| Ok((r.get(0)?, r.get(1)?)))?;
+        Ok(rows.filter_map(Result::ok).collect())
+    }
+
+    pub fn get_all_conversations(&self) -> Result<Vec<StoredConversation>> {
+        let conn = self.0.lock();
+        let mut stmt = conn.prepare("SELECT id, title, created_at, updated_at FROM conversations")?;
+        let rows = stmt.query_map([], |r| {
+            Ok(StoredConversation {
+                id: r.get(0)?,
+                title: r.get(1)?,
+                created_at: r.get(2)?,
+                updated_at: r.get(3)?,
+            })
+        })?;
+        Ok(rows.collect::<std::result::Result<Vec<_>, _>>()?)
+    }
+
+    pub fn get_all_messages(&self) -> Result<Vec<StoredMessage>> {
+        let conn = self.0.lock();
+        let mut stmt = conn.prepare(
+            "SELECT id, conversation_id, role, content, attachments, citations, provider, model,
+                    latency_ms, first_token_ms, created_at
+             FROM messages"
+        )?;
+        let rows = stmt.query_map([], |r| {
+            Ok(StoredMessage {
+                id: r.get(0)?,
+                conversation_id: r.get(1)?,
+                role: r.get(2)?,
+                content: r.get(3)?,
+                attachments: r.get(4)?,
+                citations: r.get(5)?,
+                provider: r.get(6)?,
+                model: r.get(7)?,
+                latency_ms: r.get(8)?,
+                first_token_ms: r.get(9)?,
+                created_at: r.get(10)?,
+            })
+        })?;
+        Ok(rows.collect::<std::result::Result<Vec<_>, _>>()?)
+    }
+
+    pub fn get_all_meetings(&self) -> Result<Vec<StoredMeeting>> {
+        let conn = self.0.lock();
+        let mut stmt = conn.prepare(
+            "SELECT id, title, started_at, ended_at, participants, summary, decisions, action_items FROM meetings"
+        )?;
+        let rows = stmt.query_map([], |r| {
+            Ok(StoredMeeting {
+                id: r.get(0)?,
+                title: r.get(1)?,
+                started_at: r.get(2)?,
+                ended_at: r.get(3)?,
+                participants: r.get(4)?,
+                summary: r.get(5)?,
+                decisions: r.get(6)?,
+                action_items: r.get(7)?,
+            })
+        })?;
+        Ok(rows.collect::<std::result::Result<Vec<_>, _>>()?)
+    }
+
+    pub fn get_all_segments(&self) -> Result<Vec<StoredSegment>> {
+        let conn = self.0.lock();
+        let mut stmt = conn.prepare(
+            "SELECT id, meeting_id, speaker, speaker_key, text, start_ms, end_ms, source, confidence FROM transcript_segments"
+        )?;
+        let rows = stmt.query_map([], |r| {
+            Ok(StoredSegment {
+                id: r.get(0)?,
+                meeting_id: r.get(1)?,
+                speaker: r.get(2)?,
+                speaker_key: r.get(3)?,
+                text: r.get(4)?,
+                start_ms: r.get(5)?,
+                end_ms: r.get(6)?,
+                source: r.get(7)?,
+                confidence: r.get(8)?,
+            })
+        })?;
+        Ok(rows.collect::<std::result::Result<Vec<_>, _>>()?)
     }
 }
 
@@ -308,6 +399,28 @@ where
         }
         _ => Ok(None),
     }
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct StoredConversation {
+    pub id: String,
+    pub title: String,
+    pub created_at: i64,
+    pub updated_at: i64,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct StoredMeeting {
+    pub id: String,
+    pub title: String,
+    pub started_at: i64,
+    pub ended_at: Option<i64>,
+    pub participants: String,
+    pub summary: Option<String>,
+    pub decisions: String,
+    pub action_items: String,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

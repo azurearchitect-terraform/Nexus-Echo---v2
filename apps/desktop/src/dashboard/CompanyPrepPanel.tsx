@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { Briefcase, Loader2, AlertCircle, Check, Send, Globe, FileText, Code2, Heart, MessageCircleQuestion, Trash2, Sparkles } from "lucide-react";
+import { Briefcase, Loader2, AlertCircle, Check, Send, Globe, FileText, Code2, Heart, MessageCircleQuestion, Trash2, Sparkles, Users, DollarSign } from "lucide-react";
 import { engine } from "@/lib/engine";
 import type { CompanyIntel } from "@nexus/core";
 import { useStore } from "@/lib/store";
@@ -266,6 +266,20 @@ export function CompanyPrepPanel() {
             </div>
           )}
 
+          {/* Salary Negotiation Strategy */}
+          {intel.salaryNegotiationStrategy && (
+            <div className="space-y-3 pt-2">
+              <h4 className="text-[13.5px] font-semibold text-emerald-400 flex items-center gap-1.5">
+                <DollarSign className="h-4 w-4 text-emerald-400" /> Salary Negotiation Strategy
+              </h4>
+              <div className="rounded-xl border border-emerald-400/30 bg-emerald-400/10 p-4.5 space-y-2">
+                <p className="text-[12.5px] leading-relaxed text-emerald-400/90 font-medium">
+                  {intel.salaryNegotiationStrategy}
+                </p>
+              </div>
+            </div>
+          )}
+
           {/* Discussion Questions section */}
           <div className="space-y-3">
             <h4 className="text-[13.5px] font-semibold text-accent flex items-center gap-1.5">
@@ -307,6 +321,41 @@ export function CompanyPrepPanel() {
               ))}
             </div>
           </div>
+
+          {/* HR & Recruiter Intelligence section */}
+          {intel.hrQuestions && intel.hrQuestions.length > 0 && (
+            <div className="space-y-3 pt-4 border-t border-white/10 mt-6">
+              <h4 className="text-[13.5px] font-semibold text-fuchsia-400 flex items-center gap-1.5">
+                <Users className="h-4 w-4 text-fuchsia-400" /> HR &amp; Recruiter Intelligence
+              </h4>
+              <p className="text-[12px] text-white/40 leading-relaxed">
+                Specific questions to ask during cultural or HR screening rounds to assess work-life balance, benefits, and company values:
+              </p>
+              
+              <div className="space-y-3">
+                {intel.hrQuestions.map((q, idx) => (
+                  <div
+                    key={idx}
+                    className="rounded-xl border border-fuchsia-400/20 bg-fuchsia-400/[0.03] p-4.5 space-y-3 hover:border-fuchsia-400/30 transition-colors"
+                  >
+                    <div className="flex items-start gap-2.5">
+                      <span className="flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-fuchsia-400/20 font-mono text-[11px] font-semibold text-fuchsia-400">
+                        {idx + 1}
+                      </span>
+                      <h5 className="text-[13px] font-semibold text-white/90 leading-snug">{q.question}</h5>
+                    </div>
+                    
+                    <div className="pl-7 space-y-2">
+                      <div className="rounded-lg bg-black/25 p-3 border border-fuchsia-400/10">
+                        <p className="text-[10px] text-fuchsia-400/60 font-medium uppercase tracking-wider">Why Ask This</p>
+                        <p className="text-[12.5px] text-white/70 leading-relaxed mt-0.5">{q.context}</p>
+                      </div>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
         </div>
       )}
     </section>

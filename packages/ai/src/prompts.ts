@@ -1,4 +1,4 @@
-import type { RagHit, TranscriptSegment } from "@nexus/core";
+import type { RagHit, TranscriptSegment, InterviewMode, StoryBankItem } from "@nexus/core";
 
 /**
  * Prompt design notes
@@ -12,6 +12,9 @@ import type { RagHit, TranscriptSegment } from "@nexus/core";
 const ANSWER_SHAPE = `
 ANSWER STRUCTURE & FORMAT RULES:
 - Lead directly with a bolded summary line answering the core question with executive authority.
+- MAINTAIN EXECUTIVE DEPTH: Your answers MUST be comprehensive and rich in technical depth (befitting a 16+ year senior leader). Do NOT sacrifice detail.
+- USE HEAVY STRUCTURE FOR READABILITY: Break down your deep, comprehensive answers into easily scannable sections (###) and subsections (####) rather than using long paragraphs.
+- USE DETAILED BULLET POINTS: Use well-fleshed-out, highly detailed bullet points to convey complex architectural points, making them easy to scan and read aloud during a live interview.
 - EXECUTIVE STARA FRAMEWORK (For Situational, Technical, and Behavioral Questions):
   * **Situation & Business Context**: State the business problem, enterprise scale, or operational challenge.
   * **Architectural Solution & Azure Stack**: Detail the exact Azure services (Landing Zones, ExpressRoute, AKS, Entra ID), Terraform IaC, or security design.
@@ -25,6 +28,8 @@ ANSWER STRUCTURE & FORMAT RULES:
   * NEVER criticize previous employers, managers, or team members.
   * Frame challenges around external technical complexity, legacy migration constraints, or rapid business growth.
   * Focus 80% of the answer on proactive resolution, stakeholder alignment, governance, and permanent lessons learned.
+- SALARY NEGOTIATION PROMPT:
+  * If the interviewer asks about salary expectations, desired compensation, or current compensation, formulate your answer based on general 16+ year veteran best practices: Focus on total compensation, avoid giving an exact number too early (delay until offer), or provide a competitive range based on the market. Emphasize value and alignment over base numbers.
 - DIRECT ANSWERS ONLY: Never ask clarifying questions back to the user. Make reasonable architectural assumptions and provide a direct recommendation immediately.
 `.trim();
 
@@ -208,7 +213,10 @@ Return:
   {
     "question": "Short, natural, 1-sentence question (10-15 words max)",
     "context": "Strategic rationale (under 10 words)",
-    "followUpNote": "Concise key point (under 8 words)"
+    "followUpNote": "Concise key point (under 8 words)",
+    "expectedAnswer": "Briefly, what you expect them to answer",
+    "professionalExample": "A concise example you can provide if they struggle to answer",
+    "category": "Technical" // MUST be exactly "Technical" or "HR"
   }
 ]
 
@@ -217,17 +225,11 @@ CRITICAL BREVITY & FORMAT RULES (MUST FOLLOW):
 2. SPOKEN-READY & NATURAL: Questions must sound like a natural spoken sentence from a senior 16+ year professional, not a written script or AI checklist.
 3. NO VERBOSE SCENARIOS: Avoid "Earlier during our discussion you mentioned..." or lengthy setup phrases. Ask direct, open-ended questions.
 
-INTERVIEWER ROLE DETECTION & ADAPTATION:
-Identify the interviewer's role from their introduction or vocabulary in the transcript:
-* HR / Recruiter (Keywords: culture, expectations, team, journey): Generate 1-sentence questions on role success, team culture, and first 90 days.
-* Technical Lead / Architect (Keywords: Azure, Terraform, HA/DR, networking, security): Generate 1-sentence questions on tech debt, scaling bottlenecks, and landing zones.
-* Director / VP / Hiring Manager (Keywords: ROI, FinOps, roadmap, strategy, SLAs): Generate 1-sentence questions on cloud governance, business priorities, and transformation goals.
-
-QUESTION CATEGORIES (PROVIDE 1 SHORT QUESTION EACH):
-- Category 1 (Roadmap & Scaling): "What is the biggest architectural bottleneck your team wants to solve in the next six months?"
-- Category 2 (First 90 Days): "What does immediate success look like for this role in the first 90 days?"
-- Category 3 (Tech Debt & Delivery): "How is the team balancing new cloud feature delivery with technical debt?"
-- Category 4 (FinOps & Governance): "What is the primary cloud cost or governance milestone driving your team this year?"
+QUESTION CATEGORIES (PROVIDE 2 TECHNICAL AND 2 HR QUESTIONS):
+- Technical (Roadmap, Scaling, Architecture): "What is the biggest architectural bottleneck your team wants to solve in the next six months?"
+- Technical (FinOps, Debt, Delivery): "How is the team balancing new cloud feature delivery with technical debt?"
+- HR (First 90 Days, Expectations): "What does immediate success look like for this role in the first 90 days?"
+- HR (Culture, Journey): "What has been the most rewarding part of the engineering culture here?"
 
 CANDIDATE PROFILE:
 16+ years enterprise IT experience focused on Azure Cloud Architecture, Azure Infrastructure, Cloud Operations, Governance, Security, HA/DR, FinOps, and Technical Leadership.`,
@@ -241,6 +243,88 @@ Live Interview Transcript:
 ${transcript || "No transcript available yet. Generate short, 1-sentence senior candidate questions based on the target role."}
 
 Generate 4-5 short, 1-sentence end-of-interview questions (10-15 words max each) according to system instructions.`,
+  };
+}
+
+export function coachingTipPrompt(
+  segments: TranscriptSegment[],
+  targetCompany?: string,
+  targetJd?: string
+): { system: string; user: string } {
+  return {
+    system: `You are an AI interview coach for a senior candidate.
+Review the latest transcript segment. If the candidate is talking too fast, rambling, or losing structure, give a SHORT 3-4 word coaching tip (e.g. "Slow down", "Breathe", "Use STAR method").
+If they are doing well, return an empty string.`,
+    user: `Target Company: ${targetCompany || "Unknown"}
+JD: ${targetJd || "Unknown"}
+
+Recent transcript:
+${transcriptWindow(segments, 1000)}`,
+  };
+}
+
+export function interviewAnalysisPrompt(options: {
+  question: string;
+  answer: string;
+  mode: InterviewMode;
+  targetCompany?: string;
+  targetJd?: string;
+  storyBank?: Array<Pick<StoryBankItem, "title" | "summary" | "tags" | "situation" | "action" | "result">>;
+  transcript?: string;
+}): { system: string; user: string } {
+  const storyBank = options.storyBank?.length
+    ? `\nStory bank examples the user can reuse:\n${options.storyBank
+        .map((story, idx) => `[${idx + 1}] ${story.title} | tags: ${story.tags.join(", ")}\n${story.summary}\nSituation: ${story.situation}\nAction: ${story.action}\nResult: ${story.result}`)
+        .join("\n\n")}`
+    : "";
+
+  return {
+    system: `You are Nexus Echo's senior interview coach.
+
+Return ONLY valid JSON with this shape:
+{
+  "summary": "one-sentence assessment",
+  "overallScore": 0,
+  "structureScore": 0,
+  "clarityScore": 0,
+  "specificityScore": 0,
+  "confidenceScore": 0,
+  "strengths": ["..."],
+  "gaps": ["..."],
+  "coachingTip": "short coaching cue",
+  "nextBestMove": "one short sentence",
+  "suggestedStoryTags": ["tag"],
+  "checklist": [
+    { "label": "item", "covered": true, "note": "short note" }
+  ],
+  "likelyFollowUps": [
+    { "question": "short follow-up question", "reason": "why", "priority": "high" }
+  ],
+  "storyMatchHint": "optional short hint"
+}
+
+Rules:
+- Score the answer for interview readiness, not grammar perfection.
+- Be strict about missing impact, ownership, structure, and specificity.
+- If the answer is weak, say exactly what is missing in practical terms.
+- Return at most 4 strengths, 4 gaps, 4 checklist items, and 3 follow-ups.
+- Match the user's current interview mode and seniority.
+- If the answer is good, still mention one concrete improvement.
+- Keep all fields concise and spoken-friendly.`,
+    user: `Interview mode: ${options.mode}
+Target Company: ${options.targetCompany || "Unknown"}
+Target Job Description: ${options.targetJd || "Unknown"}
+
+Question:
+${options.question}
+
+Answer:
+${options.answer}
+
+${options.transcript ? `Recent transcript:\n${options.transcript}\n` : ""}
+${storyBank}
+
+Produce the JSON assessment now.`,
   };
 }
 
@@ -272,17 +356,31 @@ The JSON MUST match this structure:
     {
       "question": "Strategic question the candidate can ask the interviewer.",
       "context": "Why this question is relevant.",
-      "suggestedPoints": ["Point 1", "Point 2"]
+      "suggestedPoints": ["Point 1", "Point 2"],
+      "expectedAnswer": "Briefly, what you expect them to answer",
+      "professionalExample": "A concise example you can provide if they struggle to answer"
     }
-  ]
+  ],
+  "hrQuestions": [
+    {
+      "question": "HR-specific question the candidate can ask about culture, benefits, or work-life balance.",
+      "context": "Why this is a good question for HR.",
+      "suggestedPoints": ["Point 1", "Point 2"],
+      "expectedAnswer": "Briefly, what you expect them to answer",
+      "professionalExample": "A concise example you can provide if they struggle to answer"
+    }
+  ],
+  "salaryNegotiationStrategy": "Specific, actionable strategy on how a 16+ year veteran should negotiate salary for this particular company and role. Include tips on total compensation, deferring numbers, or expected ranges."
 }
 
 RULES:
 1. Generate 5-7 high-probability interview questions primarily from the JD and supported company information.
-2. Generate 4-6 strategic questions for the candidate to ask.
-3. At least 2 candidate questions must demonstrate 16+ years of seniority through architecture ownership, governance, scalability, resiliency, FinOps, operational maturity, leadership, or strategic decision-making.
-4. Keep suggested answers concise, practical, and natural for spoken delivery.
-5. Prioritize enterprise reasoning over textbook definitions.
+2. Generate 4-6 strategic questions for the candidate to ask technical or executive leaders.
+3. Generate 3-5 HR-specific questions (benefits, company culture, work-life balance, remote policy) for the candidate to ask HR/recruiters.
+4. Provide a detailed salary negotiation strategy tailored to a senior candidate (16+ years experience) at this company.
+5. At least 2 candidate questions must demonstrate 16+ years of seniority through architecture ownership, governance, scalability, resiliency, FinOps, operational maturity, leadership, or strategic decision-making.
+6. Keep suggested answers concise, practical, and natural for spoken delivery.
+7. Prioritize enterprise reasoning over textbook definitions.
 6. Never invent company technologies, projects, customers, news, metrics, architecture, or initiatives.
 7. Never invent candidate experience, employers, projects, metrics, certifications, or achievements.
 8. If information is unavailable, explicitly state that it is unavailable.

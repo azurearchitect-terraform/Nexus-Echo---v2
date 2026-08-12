@@ -12,10 +12,16 @@ import {
   isPersonalQuestion,
   companyIntelPrompt,
   endOfInterviewQuestionsPrompt,
+  coachingTipPrompt,
+  interviewAnalysisPrompt,
 } from "@nexus/ai";
 import { RagStore, packVector, unpackVector } from "@nexus/rag";
 import type {
   AppSettings,
+  InterviewMode,
+  InterviewCoachInsight,
+  InterviewDebrief,
+  StoryBankItem,
   ProviderId,
   RagHit,
   StreamEvent,
@@ -99,6 +105,14 @@ export function saveToQACache(entry: Omit<QACacheEntry, "id" | "createdAt">): vo
   }
 }
 
+export function clearQACache(): void {
+  try {
+    localStorage.removeItem("nexus_qa_cache");
+  } catch (err) {
+    console.error("failed to clear QA cache", err);
+  }
+}
+
 export function findCachedQA(question: string, minSimilarity = 0.82): QACacheEntry | null {
   const cache = getQACache();
   let bestMatch: QACacheEntry | null = null;
@@ -118,6 +132,7 @@ export class Engine {
   readonly router = new HybridRouter();
   rag: RagStore | null = null;
   private settings: AppSettings | null = null;
+  private ragInitPromise: Promise<void> | null = null;
 
   /** Rebuilds providers from settings + keychain. Called on boot and on every save. */
   async configure(settings: AppSettings): Promise<void> {
@@ -151,8 +166,12 @@ export class Engine {
       }
     }
 
-    if (settings.ragEnabled && !this.rag) {
-      await this.initRag(settings);
+    if (settings.ragEnabled && !this.rag && !this.ragInitPromise) {
+      this.ragInitPromise = this.initRag(settings).catch((e) => {
+        console.error("[RAG] Background initialization failed:", e);
+      }).finally(() => {
+        this.ragInitPromise = null;
+      });
     }
   }
 
@@ -286,10 +305,18 @@ export class Engine {
       console.debug("[RAG] Skipped: ragEnabled=", this.settings?.ragEnabled, "rag=", !!this.rag);
       return [];
     }
-    console.debug("[RAG] Searching for:", query, "| Total chunks loaded:", this.rag.chunkCount);
+
+    // Enrich personal questions to ensure high BM25/Dense overlap with actual resume chunks
+    // A question like "Tell me about yourself" has near zero semantic overlap with a resume.
+    let searchQuery = query;
+    if (isPersonalQuestion(query)) {
+      searchQuery += " professional background career summary work experience skills role responsibilities achievements";
+    }
+
+    console.debug("[RAG] Searching for:", searchQuery, "| Total chunks loaded:", this.rag.chunkCount);
     try {
       const hits = await Promise.race([
-        this.rag.search(query, 4),
+        this.rag.search(searchQuery, 4),
         new Promise<RagHit[]>((resolve) => setTimeout(() => resolve([]), 2000)),
       ]);
       console.debug("[RAG] Hits found:", hits.length, hits.map(h => h.title + " score=" + h.score.toFixed(2)));
@@ -422,13 +449,117 @@ export class Engine {
     return parseStructuredJson<string[]>(raw, []).slice(0, 3);
   }
 
-  async generateEndInterviewQuestions(segments: TranscriptSegment[]): Promise<Array<{ question: string; context: string; followUpNote: string }>> {
+  async generateEndInterviewQuestions(segments: TranscriptSegment[]): Promise<Array<{ question: string; context: string; followUpNote: string; expectedAnswer: string; professionalExample: string; category: "Technical" | "HR" }>> {
     if (!this.settings) return [];
     const window = segments.length ? transcriptWindow(segments, 8000) : "";
     const { system, user } = endOfInterviewQuestionsPrompt(window, this.settings.targetCompany, this.settings.targetJd);
     const raw = await this.collect(system, user, 3000, true);
-    const parsed = parseStructuredJson<Array<{ question: string; context: string; followUpNote: string }>>(raw, []);
+    const parsed = parseStructuredJson<Array<{ question: string; context: string; followUpNote: string; expectedAnswer: string; professionalExample: string; category: "Technical" | "HR" }>>(raw, []);
     return Array.isArray(parsed) ? parsed : [];
+  }
+
+  async *generateCoachingTip(segments: TranscriptSegment[]): AsyncGenerator<StreamEvent> {
+    if (!this.settings) throw new Error("engine is not configured");
+    const { system, user } = coachingTipPrompt(
+      segments,
+      this.settings.targetCompany,
+      this.settings.targetJd
+    );
+
+    for await (const event of this.router.run({
+      system,
+      messages: [{ role: "user", content: user }],
+      policy: this.settings.routing,
+      models: this.models(),
+      maxTokens: 100, // Short response
+    })) {
+      yield event;
+    }
+  }
+
+  async analyzeInterviewTurn(options: {
+    question: string;
+    answer: string;
+    mode: InterviewMode;
+    transcript?: string;
+    storyBank?: StoryBankItem[];
+  }): Promise<InterviewCoachInsight> {
+    if (!this.settings) {
+      return {
+        summary: "Interview coach unavailable.",
+        overallScore: 0,
+        structureScore: 0,
+        clarityScore: 0,
+        specificityScore: 0,
+        confidenceScore: 0,
+        strengths: [],
+        gaps: [],
+        coachingTip: "",
+        nextBestMove: "",
+        suggestedStoryTags: [],
+        checklist: [],
+        likelyFollowUps: [],
+      };
+    }
+
+    const { system, user } = interviewAnalysisPrompt({
+      question: options.question,
+      answer: options.answer,
+      mode: options.mode,
+      targetCompany: this.settings.targetCompany,
+      targetJd: this.settings.targetJd,
+      ...(options.storyBank ? { storyBank: options.storyBank.slice(0, 6) } : {}),
+      ...(options.transcript ? { transcript: options.transcript } : {}),
+    });
+
+    const raw = await this.collect(system, user, 1800, true);
+    const parsed = parseCompanyIntelJson(raw);
+    if (!parsed) {
+      return {
+        summary: "Could not parse coach output.",
+        overallScore: 0,
+        structureScore: 0,
+        clarityScore: 0,
+        specificityScore: 0,
+        confidenceScore: 0,
+        strengths: [],
+        gaps: [],
+        coachingTip: "",
+        nextBestMove: "",
+        suggestedStoryTags: [],
+        checklist: [],
+        likelyFollowUps: [],
+      };
+    }
+
+    return {
+      summary: String((parsed as any).summary ?? "Interview answer analyzed."),
+      overallScore: Number((parsed as any).overallScore ?? 0),
+      structureScore: Number((parsed as any).structureScore ?? 0),
+      clarityScore: Number((parsed as any).clarityScore ?? 0),
+      specificityScore: Number((parsed as any).specificityScore ?? 0),
+      confidenceScore: Number((parsed as any).confidenceScore ?? 0),
+      strengths: Array.isArray((parsed as any).strengths) ? (parsed as any).strengths.map(String).slice(0, 4) : [],
+      gaps: Array.isArray((parsed as any).gaps) ? (parsed as any).gaps.map(String).slice(0, 4) : [],
+      coachingTip: String((parsed as any).coachingTip ?? ""),
+      nextBestMove: String((parsed as any).nextBestMove ?? ""),
+      suggestedStoryTags: Array.isArray((parsed as any).suggestedStoryTags) ? (parsed as any).suggestedStoryTags.map(String).slice(0, 4) : [],
+      checklist: Array.isArray((parsed as any).checklist)
+        ? (parsed as any).checklist.slice(0, 6).map((item: any) => ({
+            label: String(item.label ?? ""),
+            covered: Boolean(item.covered),
+            note: String(item.note ?? ""),
+          }))
+        : [],
+      likelyFollowUps: Array.isArray((parsed as any).likelyFollowUps)
+        ? (parsed as any).likelyFollowUps.slice(0, 3).map((item: any) => ({
+            question: String(item.question ?? ""),
+            reason: String(item.reason ?? ""),
+            priority: item.priority === "high" || item.priority === "low" ? item.priority : "medium",
+          }))
+        : [],
+      storyMatchHint: typeof (parsed as any).storyMatchHint === "string" ? (parsed as any).storyMatchHint : undefined,
+    };
   }
 
   async analyzeCompany(url: string, jdText: string | null): Promise<CompanyIntel> {

@@ -13,6 +13,15 @@ fn err<E: std::fmt::Display>(e: E) -> String {
     e.to_string()
 }
 
+#[derive(Serialize)]
+pub struct ExportBundle {
+    pub settings: std::collections::HashMap<String, String>,
+    pub conversations: Vec<crate::db::StoredConversation>,
+    pub messages: Vec<crate::db::StoredMessage>,
+    pub meetings: Vec<crate::db::StoredMeeting>,
+    pub segments: Vec<crate::db::StoredSegment>,
+}
+
 // ---------------------------------------------------------------- stealth
 
 #[tauri::command]
@@ -190,6 +199,35 @@ pub fn stop_listening(state: State<'_, AppState>) -> CmdResult<u64> {
     Ok(elapsed)
 }
 
+#[tauri::command]
+pub async fn export_bundle(state: State<'_, AppState>, path: String) -> CmdResult<()> {
+    use std::fs::File;
+    use std::io::Write;
+    use zip::write::FileOptions;
+    
+    let bundle = ExportBundle {
+        settings: state.db.get_all_settings().map_err(err)?,
+        conversations: state.db.get_all_conversations().map_err(err)?,
+        messages: state.db.get_all_messages().map_err(err)?,
+        meetings: state.db.get_all_meetings().map_err(err)?,
+        segments: state.db.get_all_segments().map_err(err)?,
+    };
+
+    let json_data = serde_json::to_string_pretty(&bundle).map_err(err)?;
+    let file = File::create(&path).map_err(err)?;
+    let mut zip = zip::ZipWriter::new(file);
+    let options = FileOptions::<'_, ()>::default()
+        .compression_method(zip::CompressionMethod::Deflated);
+
+    zip.start_file("nexus_data.json", options).map_err(err)?;
+    zip.write_all(json_data.as_bytes()).map_err(err)?;
+    zip.finish().map_err(err)?;
+    
+    event_logger::log_event(5001, event_logger::LogLevel::Info, &format!("Data bundle exported to {}", path));
+
+    Ok(())
+}
+
 // ---------------------------------------------------------------- vision
 
 #[tauri::command]
@@ -250,7 +288,8 @@ pub fn load_settings(state: State<'_, AppState>) -> CmdResult<Option<String>> {
 
 #[tauri::command]
 pub fn save_message(payload: db::StoredMessage, state: State<'_, AppState>) -> CmdResult<()> {
-    state.db.upsert_conversation(&payload.conversation_id, "Chat").map_err(err)?;
+    state.db.upsert_conversation(&payload.conversation_id, "Live Meeting").map_err(err)?;
+    event_logger::log_event(3001, event_logger::LogLevel::Info, "AI response generated and saved.");
     state.db.insert_message(&payload).map_err(err)
 }
 
@@ -280,6 +319,7 @@ pub fn finalize_meeting(
     payload: FinalizeMeetingPayload,
     state: State<'_, AppState>,
 ) -> CmdResult<()> {
+    event_logger::log_event(4002, event_logger::LogLevel::Info, &format!("Meeting finalized: {}", payload.title));
     state
         .db
         .finalize_meeting(

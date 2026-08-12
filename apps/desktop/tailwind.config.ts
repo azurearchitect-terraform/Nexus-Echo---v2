@@ -14,9 +14,9 @@ export default {
           edge: "rgba(255,255,255,0.09)",
         },
         accent: {
-          DEFAULT: "#6ee7b7",
-          muted: "#34d399",
-          deep: "#059669",
+          DEFAULT: "rgb(var(--color-accent) / <alpha-value>)",
+          muted: "rgb(var(--color-accent-muted) / <alpha-value>)",
+          deep: "rgb(var(--color-accent-deep) / <alpha-value>)",
         },
         warn: "#fbbf24",
         danger: "#f87171",

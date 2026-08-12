@@ -26,7 +26,7 @@ export default definePlugin({
   manifest: {
     id: "meeting-intelligence",
     name: "Meeting intelligence",
-    version: "2.0.0",
+    version: "2.0.1",
     description:
       "Catches commitments and deadlines as they are spoken, and files them with the meeting summary.",
     author: "Nexus Echo",

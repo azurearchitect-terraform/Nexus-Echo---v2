@@ -8,6 +8,7 @@ import {
   MessageSquare,
   Puzzle,
   Shield,
+  Sparkles,
 } from "lucide-react";
 import { useStore } from "@/lib/store";
 import { bridge, type Diagnostics } from "@/lib/bridge";
@@ -18,13 +19,15 @@ import { KnowledgePanel } from "./KnowledgePanel";
 import { MeetingsPanel } from "./MeetingsPanel";
 import { PluginsPanel } from "./PluginsPanel";
 import { CompanyPrepPanel } from "./CompanyPrepPanel";
+import { InterviewPrepPanel } from "./InterviewPrepPanel";
 
-type Tab = "meetings" | "knowledge" | "company" | "providers" | "stealth" | "plugins" | "about";
+type Tab = "meetings" | "knowledge" | "company" | "interview" | "providers" | "stealth" | "plugins" | "about";
 
 const TABS: Array<{ id: Tab; label: string; icon: React.ReactNode }> = [
   { id: "meetings", label: "Meetings & chats", icon: <MessageSquare className="h-4 w-4" /> },
   { id: "knowledge", label: "Knowledge", icon: <FileText className="h-4 w-4" /> },
   { id: "company", label: "Company Prep", icon: <Briefcase className="h-4 w-4" /> },
+  { id: "interview", label: "Interview Lab", icon: <Sparkles className="h-4 w-4" /> },
   { id: "providers", label: "Providers & routing", icon: <KeyRound className="h-4 w-4" /> },
   { id: "stealth", label: "Stealth & privacy", icon: <Shield className="h-4 w-4" /> },
   { id: "plugins", label: "Plugins", icon: <Puzzle className="h-4 w-4" /> },
@@ -35,19 +38,19 @@ export function Dashboard() {
   const [tab, setTab] = useState<Tab>("meetings");
   const [diag, setDiag] = useState<Diagnostics | null>(null);
   const { ready, settings } = useStore();
+  const isBooting = !ready;
 
   useEffect(() => {
     void bridge.diagnostics().then(setDiag);
   }, [tab]);
-
-  if (!ready) return <div className="p-8 text-white/40">Loading…</div>;
 
   return (
     <div className="flex h-screen bg-[#0a0c11] text-white">
       <aside className="flex w-60 shrink-0 flex-col border-r border-white/5 bg-black/30 p-3">
         <div className="mb-6 px-2 pt-2">
           <h1 className="text-sm font-semibold tracking-tight">Nexus-Echo-V2</h1>
-          <p className="text-[11px] text-white/30">Local-first · v2.0.0</p>
+          <p className="text-[11px] text-white/30">Local-first · v2.0.1</p>
+          {isBooting && <p className="mt-1 text-[10px] uppercase tracking-[0.2em] text-white/20">Starting…</p>}
         </div>
 
         <nav className="space-y-0.5">
@@ -88,6 +91,7 @@ export function Dashboard() {
           {tab === "meetings" && <MeetingsPanel />}
           {tab === "knowledge" && <KnowledgePanel />}
           {tab === "company" && <CompanyPrepPanel />}
+          {tab === "interview" && <InterviewPrepPanel />}
           {tab === "providers" && <SettingsPanel />}
           {tab === "stealth" && <StealthPanel />}
           {tab === "plugins" && <PluginsPanel />}

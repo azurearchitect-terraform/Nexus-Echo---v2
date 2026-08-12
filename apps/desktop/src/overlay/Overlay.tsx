@@ -33,6 +33,7 @@ import {
   HelpCircle,
   Clock,
   ShieldAlert,
+  Lightbulb,
 } from "lucide-react";
 
 function isTrapQuestion(text?: string): boolean {
@@ -96,6 +97,25 @@ import { uid, formatMs, looksLikeQuestion, type TranscriptSegment } from "@nexus
  *   vision is what makes a viewer's eye jump to a screen-shared window.
  * - The header is the only drag region, so grabbing the panel never selects text.
  */
+function CopyButton({ text, className }: { text: string; className?: string }) {
+  const [copied, setCopied] = useState(false);
+  return (
+    <button
+      onClick={(e) => {
+        e.stopPropagation();
+        navigator.clipboard.writeText(text);
+        setCopied(true);
+        setTimeout(() => setCopied(false), 2000);
+      }}
+      className={cn("flex items-center gap-1.5 rounded bg-white/5 px-2 py-1 text-[10px] text-white/40 hover:bg-white/10 hover:text-white/80 transition-colors", className)}
+      title="Copy to clipboard"
+    >
+      {copied ? <Check className="h-3 w-3 text-emerald-400" /> : <Copy className="h-3 w-3" />}
+      {copied ? "Copied" : "Copy"}
+    </button>
+  );
+}
+
 export function Overlay() {
   const {
     ready,
@@ -104,6 +124,11 @@ export function Overlay() {
     streaming,
     answer,
     answersList,
+    endInterviewQuestions,
+    isGeneratingEndQuestions,
+    latestCompanyIntel,
+    coachInsight,
+    nextQuestions,
     ask,
     listening,
     startListening,
@@ -128,7 +153,16 @@ export function Overlay() {
   const [collapsed, setCollapsed] = useState(false);
   const [copied, setCopied] = useState(false);
   const [liveQuestion, setLiveQuestion] = useState<string | null>(null);
+  const [endQnATab, setEndQnATab] = useState<"Technical" | "HR">("Technical");
+  const [answerFontSize, setAnswerFontSize] = useState<number>(14);
   const inputRef = useRef<HTMLTextAreaElement>(null);
+  const startResize = (edge: "North" | "South" | "East" | "West" | "NorthEast" | "NorthWest" | "SouthEast" | "SouthWest") => {
+    try {
+      void (getCurrentWindow() as any).startResizing(edge);
+    } catch (e) {
+      console.error("failed to start resizing", e);
+    }
+  };
 
   // Smooth character-drip typewriter for the live streaming answer.
   // Architecture: rAF loop drains pending chars at 3 chars/frame — no setTimeout jitter.
@@ -188,30 +222,6 @@ export function Overlay() {
       void unlisten.then((fn) => fn());
     };
   }, [setSpeaking]);
-
-  // Keyboard Shortcuts to Nudge Overlay Window: Ctrl+Up / Ctrl+Down / Ctrl+Left / Ctrl+Right
-  useEffect(() => {
-    const handleKeyDown = (e: KeyboardEvent) => {
-      if (e.ctrlKey || e.metaKey) {
-        const step = e.shiftKey ? 100 : 30; // Shift + Ctrl + Arrow for 100px fast move
-        if (e.key === "ArrowUp") {
-          e.preventDefault();
-          void bridge.moveOverlay(0, -step);
-        } else if (e.key === "ArrowDown") {
-          e.preventDefault();
-          void bridge.moveOverlay(0, step);
-        } else if (e.key === "ArrowLeft") {
-          e.preventDefault();
-          void bridge.moveOverlay(-step, 0);
-        } else if (e.key === "ArrowRight") {
-          e.preventDefault();
-          void bridge.moveOverlay(step, 0);
-        }
-      }
-    };
-    window.addEventListener("keydown", handleKeyDown);
-    return () => window.removeEventListener("keydown", handleKeyDown);
-  }, []);
 
   // ---- finished utterances -> transcription ---------------------------------
   useEffect(() => {
@@ -278,14 +288,6 @@ export function Overlay() {
     addAttachment({ id: uid("shot"), kind: "screenshot", path: shot.dataUrl, mimeType: "image/png" });
   };
 
-  if (!ready) {
-    return (
-      <div className="flex h-screen items-center justify-center">
-        <Loader2 className="h-5 w-5 animate-spin text-white/30" />
-      </div>
-    );
-  }
-
   const copyAnswer = async () => {
     if (!answer?.text) return;
     await navigator.clipboard.writeText(answer.text);
@@ -293,9 +295,77 @@ export function Overlay() {
     setTimeout(() => setCopied(false), 2000);
   };
 
+  const showEndQuestions = endInterviewQuestions && endInterviewQuestions.length > 0;
+
+  useEffect(() => {
+    if (showEndQuestions) {
+      bridge.resizeOverlay(850).catch(console.error);
+    }
+  }, [showEndQuestions]);
+  
+  const normalizedTechQuestions = [
+    ...(latestCompanyIntel?.questions?.map(q => ({ 
+      question: q.question, 
+      context: q.context, 
+      tip: q.suggestedPoints?.join(' • '), 
+      expectedAnswer: q.expectedAnswer,
+      professionalExample: q.professionalExample,
+      source: 'Prep' 
+    })) || []),
+    ...(endInterviewQuestions?.filter(q => q.category === 'Technical').map(q => ({ 
+      question: q.question, 
+      context: q.context, 
+      tip: q.followUpNote, 
+      expectedAnswer: q.expectedAnswer,
+      professionalExample: q.professionalExample,
+      source: 'Live' 
+    })) || [])
+  ];
+
+  const normalizedHrQuestions = [
+    ...(latestCompanyIntel?.hrQuestions?.map(q => ({ 
+      question: q.question, 
+      context: q.context, 
+      tip: q.suggestedPoints?.join(' • '), 
+      expectedAnswer: q.expectedAnswer,
+      professionalExample: q.professionalExample,
+      source: 'Prep' 
+    })) || []),
+    ...(endInterviewQuestions?.filter(q => q.category === 'HR').map(q => ({ 
+      question: q.question, 
+      context: q.context, 
+      tip: q.followUpNote, 
+      expectedAnswer: q.expectedAnswer,
+      professionalExample: q.professionalExample,
+      source: 'Live' 
+    })) || [])
+  ];
+
   return (
     <div className="flex h-screen flex-col p-2">
-      <section className="panel flex min-h-0 flex-1 flex-col overflow-hidden">
+      {!ready && (
+        <div className="absolute left-3 top-3 z-50 rounded-full border border-white/10 bg-black/60 px-2.5 py-1 text-[10px] uppercase tracking-[0.2em] text-white/40 backdrop-blur">
+          Starting...
+        </div>
+      )}
+      <section className="panel relative flex min-h-0 flex-1 flex-col overflow-hidden">
+        <div
+          onMouseDown={() => startResize("North")}
+          className="no-drag absolute left-3 right-3 top-0 z-30 h-5 cursor-n-resize"
+          title="Drag the top edge to resize"
+        >
+          <div className="mx-auto mt-1.5 h-1.5 w-28 rounded-full bg-white/25" />
+        </div>
+        <div
+          onMouseDown={() => startResize("West")}
+          className="no-drag absolute bottom-3 left-0 top-3 z-30 w-5 cursor-w-resize"
+          title="Drag the left edge to resize"
+        />
+        <div
+          onMouseDown={() => startResize("East")}
+          className="no-drag absolute bottom-3 right-0 top-3 z-30 w-5 cursor-e-resize"
+          title="Drag the right edge to resize"
+        />
         {/* ---------- header: the only drag surface ---------- */}
         <header className="drag-region flex shrink-0 items-center gap-3 border-b border-glass-edge px-3 py-2">
           <div className="flex items-center gap-1 rounded-lg bg-black/30 p-0.5 no-drag">
@@ -375,6 +445,16 @@ export function Overlay() {
               </button>
             </div>
 
+            <div className="flex items-center gap-1 border-l border-white/10 pl-2 no-drag" title="UI Accent Color">
+              <input
+                type="color"
+                value={settings.accentColor || "#6ee7b7"}
+                onChange={(e) => void saveSettings({ ...settings, accentColor: e.target.value })}
+                className="h-4 w-4 cursor-pointer rounded-full bg-transparent p-0 border-0 overflow-hidden"
+                style={{ WebkitAppearance: 'none' }}
+              />
+            </div>
+
             {answer?.firstTokenMs ? (
               <span className="font-mono text-[10px] text-white/30 ml-auto" title="Time to first token">
                 <Zap className="mr-0.5 inline h-2.5 w-2.5" />
@@ -384,6 +464,20 @@ export function Overlay() {
           </div>
 
           <div className="flex items-center gap-0.5 no-drag">
+            <button
+              className="btn-ghost"
+              onClick={() => setAnswerFontSize(Math.max(10, answerFontSize - 2))}
+              title="Decrease text size"
+            >
+              <span className="text-[12px] font-bold">A-</span>
+            </button>
+            <button
+              className="btn-ghost"
+              onClick={() => setAnswerFontSize(Math.min(24, answerFontSize + 2))}
+              title="Increase text size"
+            >
+              <span className="text-[14px] font-bold">A+</span>
+            </button>
             <button
               className="btn-ghost"
               onClick={() => useStore.getState().clearScreen()}
@@ -409,12 +503,12 @@ export function Overlay() {
             <div className="min-h-0 flex-1 overflow-y-auto px-3 py-2.5">
 
               {/* Live End-of-Interview Candidate Questions Banner */}
-              {useStore.getState().endInterviewQuestions && useStore.getState().endInterviewQuestions.length > 0 && (
-                <div className="mb-3 rounded-xl border border-amber-500/30 bg-amber-500/10 p-3.5 space-y-3 animate-fadeIn no-drag">
+              {showEndQuestions && (
+                <div className="mb-3 rounded-xl border border-amber-500/30 bg-amber-500/10 p-3.5 space-y-4 animate-fadeIn no-drag">
                   <div className="flex items-center justify-between">
-                    <div className="flex items-center gap-1.5 text-amber-400">
+                    <div className="flex items-center gap-1.5 text-white">
                       <Sparkles className="h-4 w-4" />
-                      <span className="text-[11.5px] font-semibold uppercase tracking-wide font-mono">End-of-Interview Questions (To Ask Them)</span>
+                      <span className="text-[12px] font-bold uppercase tracking-wide font-mono">End-of-Interview Questions (To Ask Them)</span>
                     </div>
                     <button
                       onClick={() => useStore.setState({ endInterviewQuestions: [] })}
@@ -425,45 +519,138 @@ export function Overlay() {
                   </div>
                   
                   <p className="text-[11.5px] text-amber-400/80 leading-normal">
-                    Tailored directly from what was spoken during this call. Ask these out loud when they ask "Do you have any questions for us?":
+                    Combined strategic prep questions and live tailored questions from the conversation.
                   </p>
 
-                  <div className="space-y-2.5">
-                    {useStore.getState().endInterviewQuestions.map((q, idx) => (
-                      <div key={idx} className="rounded-lg border border-amber-500/20 bg-black/50 p-3 space-y-1.5">
-                        <div className="flex items-start gap-2">
-                          <span className="flex h-4.5 w-4.5 shrink-0 items-center justify-center rounded-full bg-amber-500/20 text-[10px] font-bold text-amber-400 font-mono">
-                            {idx + 1}
-                          </span>
-                          <p className="text-[12.5px] font-semibold text-white/95 leading-normal">{q.question}</p>
-                        </div>
-
-                        <div className="pl-6 space-y-1">
-                          <p className="text-[11px] text-amber-500/70 italic">{q.context}</p>
-                          {q.followUpNote && (
-                            <div className="rounded bg-white/[0.03] p-1.5 text-[10.5px] text-white/60 font-mono">
-                              💡 Tip: {q.followUpNote}
-                            </div>
-                          )}
-                        </div>
-
-                        <div className="pl-6 pt-1 flex items-center gap-2">
-                          <button
-                            onClick={() => void useStore.getState().ask(q.question, false)}
-                            className="rounded bg-amber-500/20 px-2 py-0.5 text-[10px] font-semibold text-amber-300 hover:bg-amber-500/30 transition-colors"
-                          >
-                            Generate My Answer
-                          </button>
-                          <button
-                            onClick={() => void navigator.clipboard.writeText(q.question)}
-                            className="rounded border border-white/10 px-2 py-0.5 text-[10px] text-white/40 hover:text-white transition-colors"
-                          >
-                            Copy
-                          </button>
-                        </div>
-                      </div>
-                    ))}
+                  {/* Tabs */}
+                  <div className="flex space-x-2 border-b border-amber-500/20 pb-2">
+                    <button
+                      onClick={() => setEndQnATab("Technical")}
+                      className={`px-3 py-1 text-[11px] font-mono rounded transition-colors ${
+                        endQnATab === "Technical" 
+                          ? "bg-amber-500/20 text-white font-bold border border-amber-500/30" 
+                          : "text-white/60 hover:text-white hover:bg-white/10"
+                      }`}
+                    >
+                      Technical Role
+                    </button>
+                    <button
+                      onClick={() => setEndQnATab("HR")}
+                      className={`px-3 py-1 text-[11px] font-mono rounded transition-colors ${
+                        endQnATab === "HR" 
+                          ? "bg-amber-500/20 text-white font-bold border border-amber-500/30" 
+                          : "text-white/60 hover:text-white hover:bg-white/10"
+                      }`}
+                    >
+                      HR & Culture
+                    </button>
                   </div>
+
+                  {/* Technical Section */}
+                  {endQnATab === "Technical" && normalizedTechQuestions.length > 0 && (
+                    <div className="space-y-2.5">
+                      {normalizedTechQuestions.map((q, idx) => (
+                        <div key={`tech-${idx}`} className="rounded-lg border border-amber-500/20 bg-black/50 p-3 space-y-1.5 relative overflow-hidden animate-fadeIn">
+                          {q.source === 'Prep' && (
+                            <div className="absolute top-0 right-0 bg-amber-500/20 text-amber-500 px-1.5 py-0.5 text-[8px] font-mono rounded-bl">PREP</div>
+                          )}
+                          <div className="flex items-start gap-2">
+                            <span className="flex h-4.5 w-4.5 shrink-0 items-center justify-center rounded-full bg-amber-500/20 text-[10px] font-bold text-amber-400 font-mono">
+                              {idx + 1}
+                            </span>
+                            <p className="text-[12.5px] font-semibold text-white/95 leading-normal pr-6">{q.question}</p>
+                          </div>
+                          <div className="pl-6 space-y-1">
+                            <p className="text-[11px] text-amber-500/70 italic">{q.context}</p>
+                            {q.tip && (
+                              <div className="rounded bg-white/[0.03] p-1.5 text-[10.5px] text-white/60 font-mono">
+                                💡 Tip: {q.tip}
+                              </div>
+                            )}
+                            {q.expectedAnswer && (
+                              <div className="rounded bg-emerald-500/10 border border-emerald-500/20 p-2 space-y-1 mt-1">
+                                <div className="text-[10px] font-bold text-emerald-400 uppercase tracking-wide">Expected Answer</div>
+                                <p className="text-[11px] text-emerald-300/90 leading-snug">{q.expectedAnswer}</p>
+                              </div>
+                            )}
+                            {q.professionalExample && (
+                              <div className="rounded bg-blue-500/10 border border-blue-500/20 p-2 space-y-1 mt-1">
+                                <div className="text-[10px] font-bold text-blue-400 uppercase tracking-wide">Professional Example</div>
+                                <p className="text-[11px] text-blue-300/90 leading-snug">{q.professionalExample}</p>
+                              </div>
+                            )}
+                          </div>
+                          <div className="pl-6 pt-1 flex items-center gap-2">
+                            <button
+                              onClick={() => void navigator.clipboard.writeText(q.question)}
+                              className="rounded border border-white/10 px-2 py-0.5 text-[10px] text-white/40 hover:text-white transition-colors"
+                            >
+                              Copy
+                            </button>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+
+                  {endQnATab === "Technical" && normalizedTechQuestions.length === 0 && (
+                    <div className="py-4 text-center text-amber-500/50 text-[11px] font-mono italic">
+                      No technical questions generated yet.
+                    </div>
+                  )}
+
+                  {/* HR Section */}
+                  {endQnATab === "HR" && normalizedHrQuestions.length > 0 && (
+                    <div className="space-y-2.5">
+                      {normalizedHrQuestions.map((q, idx) => (
+                        <div key={`hr-${idx}`} className="rounded-lg border border-amber-500/20 bg-black/50 p-3 space-y-1.5 relative overflow-hidden animate-fadeIn">
+                          {q.source === 'Prep' && (
+                            <div className="absolute top-0 right-0 bg-amber-500/20 text-amber-500 px-1.5 py-0.5 text-[8px] font-mono rounded-bl">PREP</div>
+                          )}
+                          <div className="flex items-start gap-2">
+                            <span className="flex h-4.5 w-4.5 shrink-0 items-center justify-center rounded-full bg-amber-500/20 text-[10px] font-bold text-amber-400 font-mono">
+                              {idx + 1}
+                            </span>
+                            <p className="text-[12.5px] font-semibold text-white/95 leading-normal pr-6">{q.question}</p>
+                          </div>
+                          <div className="pl-6 space-y-1">
+                            <p className="text-[11px] text-amber-500/70 italic">{q.context}</p>
+                            {q.tip && (
+                              <div className="rounded bg-white/[0.03] p-1.5 text-[10.5px] text-white/60 font-mono">
+                                💡 Tip: {q.tip}
+                              </div>
+                            )}
+                            {q.expectedAnswer && (
+                              <div className="rounded bg-emerald-500/10 border border-emerald-500/20 p-2 space-y-1 mt-1">
+                                <div className="text-[10px] font-bold text-emerald-400 uppercase tracking-wide">Expected Answer</div>
+                                <p className="text-[11px] text-emerald-300/90 leading-snug">{q.expectedAnswer}</p>
+                              </div>
+                            )}
+                            {q.professionalExample && (
+                              <div className="rounded bg-blue-500/10 border border-blue-500/20 p-2 space-y-1 mt-1">
+                                <div className="text-[10px] font-bold text-blue-400 uppercase tracking-wide">Professional Example</div>
+                                <p className="text-[11px] text-blue-300/90 leading-snug">{q.professionalExample}</p>
+                              </div>
+                            )}
+                          </div>
+                          <div className="pl-6 pt-1 flex items-center gap-2">
+                            <button
+                              onClick={() => void navigator.clipboard.writeText(q.question)}
+                              className="rounded border border-white/10 px-2 py-0.5 text-[10px] text-white/40 hover:text-white transition-colors"
+                            >
+                              Copy
+                            </button>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+
+                  {endQnATab === "HR" && normalizedHrQuestions.length === 0 && (
+                    <div className="py-4 text-center text-amber-500/50 text-[11px] font-mono italic">
+                      No HR questions generated yet.
+                    </div>
+                  )}
                 </div>
               )}
 
@@ -543,12 +730,19 @@ export function Overlay() {
                             {answer.error}
                           </p>
                         ) : (
-                          <div className="relative">
-                            <Markdown>{answer?.text || "…"}</Markdown>
-                            {streaming && (
-                              <span
-                                className="inline-block h-4 w-[2px] rounded-sm bg-accent align-middle ml-0.5 animate-[typewriterBlink_0.6s_ease-in-out_infinite]"
-                              />
+                          <div className="relative group">
+                            <div style={{ fontSize: `${answerFontSize}px` }}>
+                              <Markdown>{answer?.text || "…"}</Markdown>
+                              {streaming && (
+                                <span
+                                  className="inline-block h-4 w-[2px] rounded-sm bg-accent align-middle ml-0.5 animate-[typewriterBlink_0.6s_ease-in-out_infinite]"
+                                />
+                              )}
+                            </div>
+                            {!streaming && answer?.text && (
+                              <div className="absolute -top-2 -right-2 opacity-0 group-hover:opacity-100 transition-opacity">
+                                <CopyButton text={answer.text} />
+                              </div>
                             )}
                           </div>
                         )}
@@ -573,8 +767,13 @@ export function Overlay() {
                             {item.error}
                           </p>
                         ) : (
-                          <div className="opacity-80">
-                            <Markdown>{item.text || "…"}</Markdown>
+                          <div className="opacity-80 relative group">
+                            <div style={{ fontSize: `${answerFontSize}px` }}>
+                              <Markdown>{item.text || "…"}</Markdown>
+                            </div>
+                            <div className="absolute -top-2 -right-2 opacity-0 group-hover:opacity-100 transition-opacity">
+                              <CopyButton text={item.text} />
+                            </div>
                           </div>
                         )}
 
@@ -678,6 +877,48 @@ export function Overlay() {
                 <CompanyIntelHUD />
               ) : (
                 <EmptyState mode={mode} />
+              )}
+
+              {(coachInsight || nextQuestions.length > 0) && (
+                <div className="mx-3 mb-3 rounded-xl border border-accent/20 bg-accent/[0.05] p-3.5 no-drag">
+                  <div className="flex items-center justify-between gap-2">
+                    <div className="flex items-center gap-1.5 text-accent">
+                      <Sparkles className="h-4 w-4" />
+                      <span className="text-[11px] font-bold uppercase tracking-wider">Interview coach</span>
+                    </div>
+                    {coachInsight && (
+                      <span className="rounded-full border border-accent/30 bg-accent/10 px-2 py-0.5 text-[10px] font-semibold text-accent">
+                        Score {coachInsight.overallScore}/100
+                      </span>
+                    )}
+                  </div>
+
+                  {coachInsight && (
+                    <p className="mt-2 text-[12.5px] leading-relaxed text-white/80">
+                      {coachInsight.coachingTip || coachInsight.summary}
+                    </p>
+                  )}
+
+                  {coachInsight?.storyMatchHint && (
+                    <p className="mt-1.5 text-[11.5px] text-white/45">
+                      Best story match: <span className="text-accent">{coachInsight.storyMatchHint}</span>
+                    </p>
+                  )}
+
+                  {nextQuestions.length > 0 && (
+                    <div className="mt-2 space-y-1.5">
+                      {nextQuestions.slice(0, 2).map((item) => (
+                        <div key={`${item.question}-${item.priority}`} className="flex items-start gap-2 rounded-lg border border-white/5 bg-black/20 px-3 py-2">
+                          <MessageSquare className="mt-0.5 h-3.5 w-3.5 shrink-0 text-accent" />
+                          <div>
+                            <p className="text-[12px] text-white/85">{item.question}</p>
+                            {item.reason && <p className="text-[11px] text-white/35">{item.reason}</p>}
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </div>
               )}
             </div>
 
@@ -834,20 +1075,20 @@ export function Overlay() {
                       const val = e.target.value;
                       useStore.getState().setManualPersona(val || null);
                     }}
-                    className="rounded border border-purple-500/40 bg-purple-500/15 px-2 py-0.5 text-purple-300 font-mono text-[10px] focus:outline-none cursor-pointer no-drag hover:bg-purple-500/25 transition-colors"
+                    className="w-[110px] truncate rounded border border-purple-500/40 bg-purple-500/15 px-2 py-0.5 text-purple-300 font-mono text-[10px] focus:outline-none cursor-pointer no-drag hover:bg-purple-500/25 transition-colors"
                     title="Interviewer Persona Mode: Auto-Detect or Manual Override"
                   >
                     <option value="" className="bg-neutral-900 text-purple-300">
-                      ⚡ Auto-Detect Persona
+                      ⚡ Auto-Detect
                     </option>
                     <option value="Executive / Director" className="bg-neutral-900 text-white">
-                      🏢 Executive / Director (FinOps & ROI)
+                      🏢 Executive
                     </option>
                     <option value="Technical Architect" className="bg-neutral-900 text-white">
-                      💻 Technical Architect (Azure & Scaling)
+                      💻 Architect
                     </option>
                     <option value="Recruiter / HR" className="bg-neutral-900 text-white">
-                      👔 Recruiter / HR (Culture & Growth)
+                      👥 Recruiter
                     </option>
                   </select>
 
@@ -877,11 +1118,25 @@ export function Overlay() {
                   </div>
 
                   <button
-                    className="flex items-center gap-1 rounded bg-amber-500/15 border border-amber-500/30 px-2 py-0.5 text-[10.5px] font-semibold text-amber-400 hover:bg-amber-500/25 transition-colors no-drag"
+                    className="flex items-center gap-1 rounded bg-accent/15 border border-accent/30 px-2 py-0.5 text-[10.5px] font-semibold text-accent hover:bg-accent/25 transition-colors no-drag"
+                    onClick={() => void useStore.getState().generateCoachingTip()}
+                    title="Get a quick actionable coaching tip based on the live interview"
+                  >
+                    <Lightbulb className="h-3 w-3" />
+                    Coach Me
+                  </button>
+
+                  <button
+                    className="flex items-center gap-1 rounded bg-amber-500/15 border border-amber-500/30 px-2 py-0.5 text-[10.5px] font-semibold text-amber-400 hover:bg-amber-500/25 transition-colors no-drag disabled:opacity-50 disabled:cursor-not-allowed"
                     onClick={() => void useStore.getState().generateEndQuestions()}
+                    disabled={isGeneratingEndQuestions}
                     title="Generate 4-5 impressive candidate questions based on the live interview transcript"
                   >
-                    <HelpCircle className="h-3 w-3" />
+                    {isGeneratingEndQuestions ? (
+                      <Loader2 className="h-3 w-3 animate-spin" />
+                    ) : (
+                      <HelpCircle className="h-3 w-3" />
+                    )}
                     End Q&amp;A
                   </button>
 
@@ -889,7 +1144,7 @@ export function Overlay() {
                   <div
                     onMouseDown={() => {
                       try {
-                        void (getCurrentWindow() as any).startResizing("SouthEast");
+                        startResize("SouthEast");
                       } catch (e) {
                         console.error("failed to start resizing", e);
                       }
@@ -906,15 +1161,16 @@ export function Overlay() {
               <div
                 onMouseDown={() => {
                   try {
-                    void (getCurrentWindow() as any).startResizing("South");
+                    startResize("South");
                   } catch (e) {
                     console.error("failed to start resizing", e);
                   }
                 }}
-                className="no-drag h-2.5 w-full cursor-s-resize hover:bg-accent/30 transition-colors flex items-center justify-center rounded-b-xl opacity-60 hover:opacity-100"
-                title="Click & Drag Bottom Border to Resize Height"
+                className="no-drag h-8 w-full cursor-s-resize border-t border-white/10 bg-white/[0.02] transition-colors flex items-center justify-center gap-2 rounded-b-xl opacity-80 hover:bg-accent/15 hover:opacity-100"
+                title="Drag the bottom edge to resize height"
               >
-                <div className="h-1 w-12 rounded-full bg-white/30" />
+                <div className="h-1.5 w-16 rounded-full bg-white/35" />
+                <span className="text-[10px] uppercase tracking-[0.24em] text-white/35">Resize</span>
               </div>
             </footer>
           </>

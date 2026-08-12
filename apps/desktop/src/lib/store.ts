@@ -4,6 +4,19 @@ import { AppSettings, uid, type Attachment, type TranscriptSegment, type Provide
 import { bridge } from "./bridge";
 import { engine, verifyAzureSpecs } from "./engine";
 import { emit, listen } from "@tauri-apps/api/event";
+import type { CoverageChecklistItem, FollowUpPrediction, InterviewCoachInsight, InterviewDebrief, InterviewMode, StoryBankItem } from "@nexus/core";
+import {
+  loadInterviewDebriefs,
+  loadInterviewMode,
+  loadStoryBank,
+  saveInterviewDebriefs,
+  saveInterviewMode,
+  saveStoryBank,
+  matchStoryBank,
+  buildCoverageChecklist,
+  buildDebriefFromInsight,
+  buildInterviewCoachInsight,
+} from "./interview";
 
 export type Mode = "ask" | "listen" | "intel";
 
@@ -47,9 +60,16 @@ interface AppStore {
   speakingMic: boolean;
   speakingSystem: boolean;
   followUps: string[];
-  endInterviewQuestions: Array<{ question: string; context: string; followUpNote: string }>;
+  endInterviewQuestions: Array<{ question: string; context: string; followUpNote: string; expectedAnswer: string; professionalExample: string; category: "Technical" | "HR" }>;
+  isGeneratingEndQuestions: boolean;
   latestCompanyIntel: CompanyIntel | null;
   manualPersona: string | null;
+  interviewMode: InterviewMode;
+  storyBank: StoryBankItem[];
+  coachInsight: InterviewCoachInsight | null;
+  coverageChecklist: CoverageChecklistItem[];
+  nextQuestions: FollowUpPrediction[];
+  interviewDebriefs: InterviewDebrief[];
 
   boot: () => Promise<void>;
   setMode: (mode: Mode) => void;
@@ -62,8 +82,14 @@ interface AppStore {
   pushSegment: (segment: TranscriptSegment) => void;
   setSpeaking: (source: "microphone" | "system", speaking: boolean) => void;
   suggest: () => Promise<void>;
+  generateCoachingTip: () => Promise<void>;
   generateEndQuestions: () => Promise<void>;
+  analyzeInterviewTurn: (question: string, answer: string, transcript?: string) => Promise<void>;
   setManualPersona: (persona: string | null) => void;
+  setInterviewMode: (mode: InterviewMode) => void;
+  addStory: (story: Omit<StoryBankItem, "id" | "createdAt">) => void;
+  updateStory: (id: string, story: Partial<StoryBankItem>) => void;
+  deleteStory: (id: string) => void;
   setLatestCompanyIntel: (intel: CompanyIntel | null) => void;
   clearScreen: () => void;
   reset: () => void;
@@ -141,6 +167,24 @@ export function isIncompleteScenario(text: string): boolean {
   return false;
 }
 
+function hexToRgbStr(hex: string): string {
+  const cleanHex = hex.replace("#", "");
+  if (cleanHex.length !== 6) return "110 231 183"; // default emerald-300
+  const r = parseInt(cleanHex.substring(0, 2), 16);
+  const g = parseInt(cleanHex.substring(2, 4), 16);
+  const b = parseInt(cleanHex.substring(4, 6), 16);
+  return `${r} ${g} ${b}`;
+}
+
+function applyThemeColors(settings: AppSettings) {
+  if (typeof document !== "undefined") {
+    const rgb = hexToRgbStr(settings.accentColor || "#6ee7b7");
+    document.documentElement.style.setProperty("--color-accent", rgb);
+    document.documentElement.style.setProperty("--color-accent-muted", rgb);
+    document.documentElement.style.setProperty("--color-accent-deep", rgb);
+  }
+}
+
 export const useStore = create<AppStore>((set, get) => ({
   ready: false,
   settings: DEFAULT_SETTINGS,
@@ -161,9 +205,16 @@ export const useStore = create<AppStore>((set, get) => ({
   speakingSystem: false,
   followUps: [],
   endInterviewQuestions: [],
+  isGeneratingEndQuestions: false,
   latestCompanyIntel: null,
 
   manualPersona: null,
+  interviewMode: loadInterviewMode(),
+  storyBank: loadStoryBank(),
+  coachInsight: null,
+  coverageChecklist: [],
+  nextQuestions: [],
+  interviewDebriefs: loadInterviewDebriefs(),
 
   async boot() {
     const raw = await bridge.loadSettings();
@@ -172,8 +223,21 @@ export const useStore = create<AppStore>((set, get) => ({
     // brick the app — fall back to defaults rather than refusing to start.
     const settings = parsed?.success ? parsed.data : DEFAULT_SETTINGS;
 
+    set({
+      settings,
+      ready: true,
+      latestCompanyIntel: null,
+      interviewMode: loadInterviewMode(),
+      storyBank: loadStoryBank(),
+      coachInsight: null,
+      coverageChecklist: [],
+      nextQuestions: [],
+      interviewDebriefs: loadInterviewDebriefs(),
+    });
+
     await engine.configure(settings);
     await bridge.applyStealth(settings.stealth);
+    applyThemeColors(settings);
     
     // Load persisted company intel
     let latestCompanyIntel: CompanyIntel | null = null;
@@ -190,7 +254,7 @@ export const useStore = create<AppStore>((set, get) => ({
       set({ latestCompanyIntel: event.payload });
     });
 
-    void listen<Array<{ question: string; context: string; followUpNote: string }>>("nexus://end-questions-updated", (event) => {
+    void listen<Array<{ question: string; context: string; followUpNote: string; expectedAnswer: string; professionalExample: string; category: "Technical" | "HR" }>>("nexus://end-questions-updated", (event) => {
       set({ endInterviewQuestions: event.payload });
     });
 
@@ -206,6 +270,7 @@ export const useStore = create<AppStore>((set, get) => ({
     await bridge.saveSettings(JSON.stringify(settings));
     await engine.configure(settings);
     await bridge.applyStealth(settings.stealth);
+    applyThemeColors(settings);
     set({ settings });
   },
 
@@ -319,6 +384,7 @@ export const useStore = create<AppStore>((set, get) => ({
           firstTokenMs: final.firstTokenMs != null ? Math.round(final.firstTokenMs) : null,
           createdAt: Date.now(),
         });
+        void get().analyzeInterviewTurn(prompt, final.text, get().segments.map((segment) => `${segment.speaker}: ${segment.text}`).join("\n"));
       }
     } finally {
       set({ streaming: false, attachments: [] });
@@ -406,9 +472,141 @@ export const useStore = create<AppStore>((set, get) => ({
   },
 
   async generateEndQuestions() {
-    const questions = await engine.generateEndInterviewQuestions(get().segments);
-    set({ endInterviewQuestions: questions });
-    void emit("nexus://end-questions-updated", questions);
+    set({ isGeneratingEndQuestions: true });
+    try {
+      const questions = await engine.generateEndInterviewQuestions(get().segments);
+      set({ endInterviewQuestions: questions });
+      void emit("nexus://end-questions-updated", questions);
+    } finally {
+      set({ isGeneratingEndQuestions: false });
+    }
+  },
+
+  async analyzeInterviewTurn(question, answer, transcript) {
+    const trimmedQuestion = question.trim();
+    const trimmedAnswer = answer.trim();
+    if (!trimmedQuestion || !trimmedAnswer) return;
+
+    const state = get();
+    const localStories = state.storyBank;
+    const localCoach = buildInterviewCoachInsight(trimmedQuestion, trimmedAnswer, state.interviewMode, localStories);
+
+    let remoteCoach: InterviewCoachInsight | null = null;
+    try {
+      remoteCoach = await engine.analyzeInterviewTurn({
+        question: trimmedQuestion,
+        answer: trimmedAnswer,
+        mode: state.interviewMode,
+        ...(transcript ? { transcript } : {}),
+        ...(localStories.length ? { storyBank: localStories } : {}),
+      });
+    } catch (e) {
+      console.error("interview analysis failed", e);
+    }
+
+    const matchedStories = matchStoryBank(trimmedQuestion, trimmedAnswer, localStories);
+    const topStory = matchedStories[0];
+    const checklist = (remoteCoach?.checklist?.length ? remoteCoach.checklist : localCoach.checklist).map((item) => ({
+      ...item,
+      covered: item.covered || buildCoverageChecklist(trimmedQuestion, trimmedAnswer, state.interviewMode).some((fallback) => fallback.label === item.label && fallback.covered),
+    }));
+    const nextQuestions = (remoteCoach?.likelyFollowUps?.length ? remoteCoach.likelyFollowUps : localCoach.likelyFollowUps).slice(0, 3);
+    const coachInsight: InterviewCoachInsight = {
+      ...(remoteCoach ?? localCoach),
+      summary: remoteCoach?.summary || localCoach.summary,
+      overallScore: remoteCoach?.overallScore ?? localCoach.overallScore,
+      structureScore: remoteCoach?.structureScore ?? localCoach.structureScore,
+      clarityScore: remoteCoach?.clarityScore ?? localCoach.clarityScore,
+      specificityScore: remoteCoach?.specificityScore ?? localCoach.specificityScore,
+      confidenceScore: remoteCoach?.confidenceScore ?? localCoach.confidenceScore,
+      strengths: [...new Set([...(remoteCoach?.strengths ?? localCoach.strengths), ...(topStory ? [`Best story match: ${topStory.title}`] : [])])].slice(0, 4),
+      gaps: remoteCoach?.gaps ?? localCoach.gaps,
+      coachingTip: remoteCoach?.coachingTip || localCoach.coachingTip,
+      nextBestMove: remoteCoach?.nextBestMove || localCoach.nextBestMove,
+      suggestedStoryTags: [...new Set([...(remoteCoach?.suggestedStoryTags ?? localCoach.suggestedStoryTags), ...(topStory?.tags ?? [])])].slice(0, 4),
+      checklist,
+      likelyFollowUps: nextQuestions,
+      storyMatchHint: topStory ? `${topStory.title} (${Math.round(topStory.score * 100)}% match)` : remoteCoach?.storyMatchHint || localCoach.storyMatchHint,
+    };
+
+    const debrief = buildDebriefFromInsight(trimmedQuestion, trimmedAnswer, state.interviewMode, coachInsight, topStory?.title);
+    const debriefs = [...state.interviewDebriefs.filter((item) => item.question !== trimmedQuestion || item.answer !== trimmedAnswer), debrief];
+
+    set({
+      coachInsight,
+      coverageChecklist: checklist,
+      nextQuestions,
+      interviewDebriefs: debriefs,
+    });
+    saveInterviewDebriefs(debriefs);
+  },
+
+  setInterviewMode(mode) {
+    saveInterviewMode(mode);
+    set({ interviewMode: mode });
+  },
+
+  addStory(story) {
+    const next: StoryBankItem = {
+      ...story,
+      id: uid("story"),
+      createdAt: Date.now(),
+    };
+    const stories = [...get().storyBank, next];
+    saveStoryBank(stories);
+    set({ storyBank: stories });
+  },
+
+  updateStory(id, story) {
+    const stories = get().storyBank.map((item) => (item.id === id ? { ...item, ...story } : item));
+    saveStoryBank(stories);
+    set({ storyBank: stories });
+  },
+
+  deleteStory(id) {
+    const stories = get().storyBank.filter((item) => item.id !== id);
+    saveStoryBank(stories);
+    set({ storyBank: stories });
+  },
+
+  async generateCoachingTip() {
+    if (get().streaming) return; // Drop if already busy
+    const segments = get().segments;
+    
+    const answerId = uid("ans");
+    set({
+      streaming: true,
+      answer: { id: answerId, question: "Coaching Tip", persona: "Interview Coach", text: "", citations: [] },
+    });
+    
+    try {
+      for await (const event of engine.generateCoachingTip(segments)) {
+        if (event.type === "token") {
+          set((s) => ({ answer: s.answer ? { ...s.answer, text: s.answer.text + event.delta } : s.answer }));
+        } else if (event.type === "start") {
+          set((s) => ({
+            answer: s.answer ? { ...s.answer, provider: event.provider, model: event.model } : s.answer,
+          }));
+        } else if (event.type === "done") {
+          set((s) => ({
+            answer: s.answer
+              ? { ...s.answer, latencyMs: event.latencyMs, firstTokenMs: event.firstTokenMs }
+              : s.answer,
+          }));
+        } else if (event.type === "error") {
+          set((s) => ({ answer: s.answer ? { ...s.answer, error: event.message } : s.answer }));
+        }
+      }
+      
+      const final = get().answer;
+      if (final?.text) {
+        set((s) => ({
+          answersList: [...s.answersList.filter((a) => a.id !== final.id), final],
+        }));
+      }
+    } finally {
+      set({ streaming: false });
+    }
   },
 
   async suggest() {
@@ -459,6 +657,7 @@ export const useStore = create<AppStore>((set, get) => ({
         set((s) => ({
           answersList: [...s.answersList.filter((a) => a.id !== final.id), verifiedAnswer],
         }));
+        void get().analyzeInterviewTurn(lastQuestion, final.text, segments.map((segment) => `${segment.speaker}: ${segment.text}`).join("\n"));
       }
       // Follow-up generation disabled for clean UI
     } finally {

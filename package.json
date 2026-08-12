@@ -1,6 +1,6 @@
 {
   "name": "nexus-echo-ai",
-  "version": "2.0.0",
+  "version": "2.0.1",
   "private": true,
   "packageManager": "pnpm@9.12.0",
   "engines": {
@@ -8,7 +8,8 @@
     "pnpm": ">=9.0.0"
   },
   "scripts": {
-    "dev": "turbo run dev --parallel",
+    "dev": "pnpm app:dev",
+    "dev:web": "turbo run dev --parallel",
     "build": "turbo run build",
     "tauri": "pnpm --filter @nexus/desktop tauri",
     "app:dev": "pnpm --filter @nexus/desktop tauri dev",

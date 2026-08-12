@@ -1,8 +1,10 @@
 import { useState } from "react";
-import { Check, Eye, EyeOff, Zap, Building2 } from "lucide-react";
+import { Check, Eye, EyeOff, Zap, Building2, Download } from "lucide-react";
 import { useStore } from "@/lib/store";
 import { bridge } from "@/lib/bridge";
-import { DEFAULT_MODELS } from "@/lib/engine";
+import { invoke } from "@tauri-apps/api/core";
+import { save } from "@tauri-apps/plugin-dialog";
+import { DEFAULT_MODELS, clearQACache } from "@/lib/engine";
 import { cn } from "@/lib/cn";
 import type { ProviderId, RoutingMode } from "@nexus/core";
 
@@ -139,6 +141,24 @@ export function SettingsPanel() {
           void saveSettings({ ...settings, routing: { ...settings.routing, firstTokenTimeoutMs } })
         }
       />
+
+      {/* ---------------- Appearance ---------------- */}
+      <div className="space-y-2 border-t border-white/5 pt-6 mt-6">
+        <h3 className="text-[13px] font-medium">Appearance</h3>
+        <p className="text-[12px] text-white/40">
+          Customize the UI accent color to match your preference.
+        </p>
+        <div className="flex items-center gap-3">
+          <input
+            type="color"
+            value={settings.accentColor || "#6ee7b7"}
+            onChange={(e) => void saveSettings({ ...settings, accentColor: e.target.value })}
+            className="h-8 w-14 cursor-pointer rounded bg-transparent p-0 border-0"
+            title="Choose Accent Color"
+          />
+          <span className="font-mono text-[12px] text-white/60 uppercase">{settings.accentColor || "#6ee7b7"}</span>
+        </div>
+      </div>
 
       {/* ---------------- STT engine picker ---------------- */}
       <div className="space-y-2">
@@ -331,6 +351,57 @@ export function SettingsPanel() {
           rows={4}
           className="w-full rounded-lg border border-white/10 bg-black/40 px-3 py-2 text-[13px]"
         />
+      </div>
+
+      {/* ---------------- Export Bundle ---------------- */}
+      <div className="space-y-2 border-t border-white/5 pt-6 mt-6">
+        <h3 className="text-[13px] font-medium flex items-center gap-1.5">
+          <Download className="h-4 w-4" /> Export Data Bundle
+        </h3>
+        <p className="text-[12px] text-white/40 mb-3">
+          Download all your meetings, transcripts, and settings as a ZIP JSON bundle.
+        </p>
+        <button
+          onClick={async () => {
+            try {
+              const path = await save({
+                filters: [{ name: "Nexus Data Bundle", extensions: ["zip"] }],
+                defaultPath: "nexus_data.zip",
+              });
+              if (path) {
+                await invoke("export_bundle", { path });
+                setSaved("export");
+                setTimeout(() => setSaved(null), 2000);
+              }
+            } catch (e) {
+              console.error("Export failed:", e);
+              alert("Failed to export bundle");
+            }
+          }}
+          className="flex h-8 w-fit items-center justify-center gap-2 rounded-lg border border-white/10 bg-black px-4 text-[12px] text-white transition-colors hover:bg-white/10"
+        >
+          {saved === "export" ? <Check className="h-4 w-4 text-accent" /> : "Save to ZIP"}
+        </button>
+      </div>
+
+      {/* ---------------- Maintenance ---------------- */}
+      <div className="space-y-2 border-t border-white/5 pt-6 mt-6">
+        <h3 className="text-[13px] font-medium flex items-center gap-1.5">
+          <Zap className="h-4 w-4" /> Clear Answer Cache
+        </h3>
+        <p className="text-[12px] text-white/40 mb-3">
+          If the AI is returning an old or wrong answer instantly, clear the cache to force a fresh generation.
+        </p>
+        <button
+          onClick={() => {
+            clearQACache();
+            setSaved("cache");
+            setTimeout(() => setSaved(null), 2000);
+          }}
+          className="flex h-8 items-center justify-center gap-2 rounded-lg border border-white/10 bg-black px-4 w-fit text-[12px] text-white transition-colors hover:bg-white/10"
+        >
+          {saved === "cache" ? <Check className="h-4 w-4 text-accent" /> : "Clear Cache"}
+        </button>
       </div>
     </section>
   );

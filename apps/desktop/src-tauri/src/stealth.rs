@@ -51,6 +51,11 @@ pub fn apply(window: &WebviewWindow, cfg: &StealthConfig) -> tauri::Result<()> {
     window.set_skip_taskbar(cfg.hide_from_taskbar)?;
     window.set_ignore_cursor_events(cfg.click_through)?;
 
+    // Dynamically show or hide the system tray icon
+    if let Some(tray) = window.app_handle().tray_by_id("nexus-tray") {
+        let _ = tray.set_visible(!cfg.hide_from_taskbar);
+    }
+
     #[cfg(target_os = "macos")]
     apply_macos(window, cfg)?;
 
@@ -128,10 +133,11 @@ fn apply_windows(window: &WebviewWindow, cfg: &StealthConfig) -> tauri::Result<(
     Ok(())
 }
 
-/// Panic blank: hide instantly without teardown, so the overlay is gone within a frame.
+/// Panic blank: instantly toggles the overlay visibility
 pub fn panic_hide(app: &AppHandle) {
     if let Some(overlay) = app.get_webview_window("overlay") {
-        let _ = overlay.hide();
+        let visible = overlay.is_visible().unwrap_or(false);
+        let _ = if visible { overlay.hide() } else { overlay.show() };
     }
 }
 
