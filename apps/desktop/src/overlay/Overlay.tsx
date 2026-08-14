@@ -411,34 +411,41 @@ export function Overlay() {
   ];
 
   return (
-    <div className="flex h-screen flex-col p-2">
+    <div className="flex h-screen flex-col p-2 relative">
+      {/* Outer Resize Frame (Uses the 8px p-2 padding space) */}
+      <div
+        onMouseDown={() => startResize("North")}
+        className="no-drag absolute top-0 left-2 right-2 h-2 cursor-n-resize bg-white/10 hover:bg-accent/60 transition-colors rounded-t-md z-50"
+        title="Drag top edge to resize"
+      />
+      <div
+        onMouseDown={() => startResize("South")}
+        className="no-drag absolute bottom-0 left-2 right-2 h-2 cursor-s-resize bg-white/10 hover:bg-accent/60 transition-colors rounded-b-md z-50"
+        title="Drag bottom edge to resize"
+      />
+      <div
+        onMouseDown={() => startResize("West")}
+        className="no-drag absolute top-0 bottom-0 left-0 w-2 cursor-w-resize bg-white/10 hover:bg-accent/60 transition-colors rounded-l-md z-50"
+        title="Drag left edge to resize"
+      />
+      <div
+        onMouseDown={() => startResize("East")}
+        className="no-drag absolute top-0 bottom-0 right-0 w-2 cursor-e-resize bg-white/10 hover:bg-accent/60 transition-colors rounded-r-md z-50"
+        title="Drag right edge to resize"
+      />
+
+      {/* Corners for easy diagonal resize */}
+      <div onMouseDown={() => startResize("NorthWest")} className="no-drag absolute top-0 left-0 w-3 h-3 cursor-nw-resize z-[60]" />
+      <div onMouseDown={() => startResize("NorthEast")} className="no-drag absolute top-0 right-0 w-3 h-3 cursor-ne-resize z-[60]" />
+      <div onMouseDown={() => startResize("SouthWest")} className="no-drag absolute bottom-0 left-0 w-3 h-3 cursor-sw-resize z-[60]" />
+      <div onMouseDown={() => startResize("SouthEast")} className="no-drag absolute bottom-0 right-0 w-3 h-3 cursor-se-resize z-[60]" />
+
       {!ready && (
-        <div className="absolute left-3 top-3 z-50 rounded-full border border-white/10 bg-black/60 px-2.5 py-1 text-[10px] uppercase tracking-[0.2em] text-white/40 backdrop-blur">
+        <div className="absolute left-4 top-4 z-50 rounded-full border border-white/10 bg-black/60 px-2.5 py-1 text-[10px] uppercase tracking-[0.2em] text-white/40 backdrop-blur">
           Starting...
         </div>
       )}
       <section className="panel relative flex min-h-0 flex-1 flex-col overflow-hidden">
-        <div
-          onMouseDown={() => startResize("North")}
-          className="no-drag absolute left-3 right-3 top-0 z-30 h-6 cursor-n-resize group flex justify-center items-start"
-          title="Drag the top edge to resize"
-        >
-          <div className="mt-1 h-1 w-32 rounded-full bg-white/20 group-hover:bg-accent/60 transition-colors" />
-        </div>
-        <div
-          onMouseDown={() => startResize("West")}
-          className="no-drag absolute bottom-3 left-0 top-3 z-30 w-8 cursor-w-resize group flex items-center justify-start"
-          title="Drag the left edge to resize"
-        >
-          <div className="h-32 w-1 rounded-r-lg bg-white/10 group-hover:bg-accent/60 transition-colors" />
-        </div>
-        <div
-          onMouseDown={() => startResize("East")}
-          className="no-drag absolute bottom-3 right-0 top-3 z-30 w-8 cursor-e-resize group flex items-center justify-end"
-          title="Drag the right edge to resize"
-        >
-          <div className="h-32 w-1 rounded-l-lg bg-white/10 group-hover:bg-accent/60 transition-colors" />
-        </div>
         {/* ---------- header: the only drag surface ---------- */}
         <header data-tauri-drag-region className="drag-region flex shrink-0 items-center gap-3 border-b border-glass-edge px-3 pb-2 pt-4">
           <div data-tauri-drag-region="false" className="flex items-center gap-1 rounded-lg bg-black/30 p-0.5 no-drag">
@@ -1446,21 +1453,6 @@ export function Overlay() {
                 </div>
               </div>
 
-              {/* Bottom Edge Native Resize Bar */}
-              <div
-                onMouseDown={() => {
-                  try {
-                    startResize("South");
-                  } catch (e) {
-                    console.error("failed to start resizing", e);
-                  }
-                }}
-                className="no-drag h-8 w-full cursor-s-resize border-t border-white/10 bg-white/[0.02] transition-colors flex items-center justify-center gap-2 rounded-b-xl opacity-80 hover:bg-accent/15 hover:opacity-100"
-                title="Drag the bottom edge to resize height"
-              >
-                <div className="h-1.5 w-16 rounded-full bg-white/35" />
-                <span className="text-[10px] uppercase tracking-[0.24em] text-white/35">Resize</span>
-              </div>
             </footer>
           </>
         )}
