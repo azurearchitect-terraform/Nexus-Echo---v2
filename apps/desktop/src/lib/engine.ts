@@ -416,7 +416,7 @@ export class Engine {
       ],
       policy: this.settings.routing,
       models: this.models(),
-      signal,
+      ...(signal ? { signal } : {}),
     })) {
       if (event.type === "token") {
         fullAnswer += event.delta;

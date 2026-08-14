@@ -117,6 +117,7 @@ let suggestDebounceTimer: ReturnType<typeof setTimeout> | null = null;
 let smartWaitTimer: ReturnType<typeof setTimeout> | null = null;
 let speculativeWaitTimer: ReturnType<typeof setTimeout> | null = null;
 let speculativeAbortController: AbortController | null = null;
+let activeAbortController: AbortController | null = null;
 
 // ─── INCOMPLETE SENTENCE STARTERS ──────────────────────────────
 // These phrases typically begin multi-part scenario questions.
@@ -653,6 +654,11 @@ export const useStore = create<AppStore>((set, get) => ({
           set({ speculativeAnswer: null, isSpeculating: false });
           console.log("[Speculative] Interrupted by new speech. Aborting background generation.");
         }
+        if (activeAbortController) {
+          console.log("[Interrupt & Merge] Interviewer resumed speaking! Aborting active answer.");
+          activeAbortController.abort();
+          activeAbortController = null;
+        }
 
         const recentSegments = get().segments.slice(-5);
         const combinedText = recentSegments
@@ -920,6 +926,8 @@ export const useStore = create<AppStore>((set, get) => ({
         speculativeAnswer: { id: answerId, question: lastQuestion || undefined, persona, text: "", citations: [] },
       });
     } else {
+      activeAbortController = new AbortController();
+      abortController = activeAbortController;
       set({
         streaming: true,
         answer: { id: answerId, question: lastQuestion || undefined, persona, text: "", citations: [] },
@@ -956,7 +964,7 @@ export const useStore = create<AppStore>((set, get) => ({
       }
 
       const final = get().answer;
-      if (final?.text) {
+      if (final?.text && !abortController?.signal.aborted) {
         const verifiedSpec = verifyAzureSpecs(final.text);
         const verifiedAnswer = { ...final, verifiedSpec };
         set((s) => ({
