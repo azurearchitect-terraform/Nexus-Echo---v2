@@ -420,19 +420,19 @@ export function Overlay() {
       <section className="panel relative flex min-h-0 flex-1 flex-col overflow-hidden">
         <div
           onMouseDown={() => startResize("North")}
-          className="no-drag absolute left-3 right-3 top-0 z-30 h-3 cursor-n-resize"
+          className="no-drag absolute left-3 right-3 top-0 z-30 h-6 cursor-n-resize"
           title="Drag the top edge to resize"
         >
-          <div className="mx-auto mt-1.5 h-1.5 w-28 rounded-full bg-white/25" />
+          <div className="mx-auto mt-1.5 h-2 w-32 rounded-full bg-white/25" />
         </div>
         <div
           onMouseDown={() => startResize("West")}
-          className="no-drag absolute bottom-3 left-0 top-3 z-30 w-5 cursor-w-resize"
+          className="no-drag absolute bottom-3 left-0 top-3 z-30 w-8 cursor-w-resize"
           title="Drag the left edge to resize"
         />
         <div
           onMouseDown={() => startResize("East")}
-          className="no-drag absolute bottom-3 right-0 top-3 z-30 w-5 cursor-e-resize"
+          className="no-drag absolute bottom-3 right-0 top-3 z-30 w-8 cursor-e-resize"
           title="Drag the right edge to resize"
         />
         {/* ---------- header: the only drag surface ---------- */}
@@ -604,20 +604,6 @@ export function Overlay() {
           </div>
 
           <div data-tauri-drag-region="false" className="flex items-center gap-0.5 no-drag">
-            <div className="flex items-center gap-1 border-r border-white/10 pr-1.5 mr-0.5">
-              <span className="text-[10px] font-semibold text-white/50" title="Speculative ghost text trigger time (ms)">Ghost:</span>
-              <input
-                type="range"
-                min="50"
-                max="1000"
-                step="50"
-                value={settings.routing.speculativeWaitMs ?? 350}
-                onChange={(e) => void saveSettings({ ...settings, routing: { ...settings.routing, speculativeWaitMs: parseInt(e.target.value, 10) } })}
-                className="w-14 accent-accent cursor-pointer"
-                title={`Trigger ghost text after ${settings.routing.speculativeWaitMs ?? 350}ms silence`}
-              />
-              <span className="text-[9px] text-accent w-6 text-right font-mono">{settings.routing.speculativeWaitMs ?? 350}ms</span>
-            </div>
             <button
               className="btn-ghost"
               onClick={() => setAnswerFontSize(Math.max(10, answerFontSize - 2))}
@@ -1352,6 +1338,21 @@ export function Overlay() {
                   <span className="w-6 text-right text-accent font-semibold">
                     {Math.round((settings.stealth.opacity ?? 0.92) * 100)}%
                   </span>
+                </div>
+
+                <div className="flex items-center gap-1 border-l border-white/10 pl-1.5 min-w-0">
+                  <span className="text-[9px] text-white/60 font-mono">Ghost:</span>
+                  <input
+                    type="range"
+                    min="50"
+                    max="1000"
+                    step="50"
+                    value={settings.routing.speculativeWaitMs ?? 350}
+                    onChange={(e) => void saveSettings({ ...settings, routing: { ...settings.routing, speculativeWaitMs: parseInt(e.target.value, 10) } })}
+                    className="h-1.5 w-16 cursor-pointer accent-accent bg-white/20 rounded-lg appearance-none"
+                    title={`Trigger ghost text after ${settings.routing.speculativeWaitMs ?? 350}ms silence`}
+                  />
+                  <span className="text-[9px] text-accent font-semibold">{settings.routing.speculativeWaitMs ?? 350}ms</span>
                 </div>
 
                 {/* Persona Selector & End Q&A Button Moved to Bottom Toolbar */}
