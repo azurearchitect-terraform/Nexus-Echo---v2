@@ -135,7 +135,15 @@ impl Db {
         self.0.lock().execute(
             "INSERT INTO messages(id, conversation_id, role, content, attachments, citations,
                                   provider, model, latency_ms, first_token_ms, created_at)
-             VALUES(?1,?2,?3,?4,?5,?6,?7,?8,?9,?10,?11)",
+             VALUES(?1,?2,?3,?4,?5,?6,?7,?8,?9,?10,?11)
+             ON CONFLICT(id) DO UPDATE SET
+                content=excluded.content,
+                attachments=excluded.attachments,
+                citations=excluded.citations,
+                provider=excluded.provider,
+                model=excluded.model,
+                latency_ms=excluded.latency_ms,
+                first_token_ms=excluded.first_token_ms",
             params![
                 m.id, m.conversation_id, m.role, m.content, m.attachments, m.citations,
                 m.provider, m.model, m.latency_ms, m.first_token_ms, m.created_at

@@ -930,7 +930,14 @@ export const useStore = create<AppStore>((set, get) => ({
     const persona = get().manualPersona || (lastQuestion ? detectPersona(lastQuestion) : (get().detectedPersona ?? undefined));
     if (persona) set({ detectedPersona: persona });
 
-    const answerId = uid("ans");
+    const answersList = get().answersList;
+    const lastAns = answersList[answersList.length - 1];
+    
+    let answerId = uid("ans");
+    if (lastAns && Date.now() - lastAns.createdAt < 15000) {
+      answerId = lastAns.id;
+    }
+
     let abortController: AbortController | undefined;
 
     if (isSpeculative) {
