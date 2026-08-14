@@ -103,6 +103,8 @@ interface AppStore {
   
   isSpeculating: boolean;
   speculativeAnswer: Answer | null;
+  isSpeculationComplete: boolean;
+  finalizeAnswer: (final: Answer, lastQuestion: string, segments: TranscriptSegment[]) => void;
 }
 
 const DEFAULT_SETTINGS = AppSettings.parse({
@@ -311,6 +313,7 @@ export const useStore = create<AppStore>((set, get) => ({
   
   isSpeculating: false,
   speculativeAnswer: null,
+  isSpeculationComplete: false,
 
   manualPersona: null,
   interviewMode: loadInterviewMode(),
@@ -896,10 +899,26 @@ export const useStore = create<AppStore>((set, get) => ({
   },
 
   async suggest(isSpeculative = false) {
+    const segments = get().segments;
+    const recent = segments.slice(-3);
+    const lastQuestion = recent.map((s) => s.text.trim()).filter(Boolean).join(" ") || "Live Question";
+
     if (get().streaming && !isSpeculative) {
       if (get().isSpeculating) {
         console.log("[Speculative] Promoting background answer to foreground!");
-        set({ isSpeculating: false, answer: get().speculativeAnswer, streaming: true });
+        const isComplete = get().isSpeculationComplete;
+        const ans = get().speculativeAnswer;
+
+        set({ isSpeculating: false, isSpeculationComplete: false, answer: ans, streaming: !isComplete });
+
+        if (isComplete && ans?.text) {
+          get().finalizeAnswer(ans, lastQuestion, segments);
+          const nextTask = get().questionBuffer[0];
+          if (nextTask) {
+            set((s) => ({ questionBuffer: s.questionBuffer.slice(1) }));
+            if (nextTask.kind === "suggest") void get().suggest();
+          }
+        }
         return;
       }
       set((s) => ({ questionBuffer: [...s.questionBuffer, { kind: "suggest" }] }));
@@ -908,9 +927,6 @@ export const useStore = create<AppStore>((set, get) => ({
     
     if (get().streaming && isSpeculative) return;
 
-    const segments = get().segments;
-    const recent = segments.slice(-3);
-    const lastQuestion = recent.map((s) => s.text.trim()).filter(Boolean).join(" ") || "Live Question";
     const persona = get().manualPersona || (lastQuestion ? detectPersona(lastQuestion) : (get().detectedPersona ?? undefined));
     if (persona) set({ detectedPersona: persona });
 
@@ -960,48 +976,26 @@ export const useStore = create<AppStore>((set, get) => ({
       }
       
       if (isSpeculative && get().isSpeculating) {
+        set({ isSpeculationComplete: true });
         return; // Finished speculatively but never promoted
       }
 
       const final = get().answer;
       if (final?.text && !abortController?.signal.aborted) {
-        const verifiedSpec = verifyAzureSpecs(final.text);
-        const verifiedAnswer = { ...final, verifiedSpec };
-        set((s) => ({
-          answersList: [...s.answersList.filter((a) => a.id !== final.id), verifiedAnswer],
-        }));
-
-        void bridge.saveMessage({
-          id: final.id,
-          conversationId: get().conversationId,
-          role: "assistant",
-          content: final.text,
-          attachments: JSON.stringify([]),
-          citations: JSON.stringify(final.citations),
-          provider: final.provider ?? null,
-          model: final.model ?? null,
-          latencyMs: final.latencyMs != null ? Math.round(final.latencyMs) : null,
-          firstTokenMs: final.firstTokenMs != null ? Math.round(final.firstTokenMs) : null,
-          createdAt: Date.now(),
-        }).catch(console.error);
-
-        void get().analyzeInterviewTurn(lastQuestion, final.text, segments.map((segment) => `${segment.speaker}: ${segment.text}`).join("\n"));
+        get().finalizeAnswer(final, lastQuestion, segments);
       }
     } catch (e: any) {
       if (e.name !== "AbortError") console.error(e);
+      else console.log("[Suggest] Stream aborted.");
     } finally {
       if (isSpeculative && get().isSpeculating) {
-        set({ isSpeculating: false });
+        // Do not clear isSpeculating here, it was handled by isSpeculationComplete
       } else {
         set({ streaming: false });
         const nextTask = get().questionBuffer[0];
         if (nextTask) {
           set((s) => ({ questionBuffer: s.questionBuffer.slice(1) }));
-          if (nextTask.kind === "ask" && nextTask.prompt) {
-            void get().ask(nextTask.prompt, nextTask.useScreen ?? false);
-          } else if (nextTask.kind === "suggest") {
-            void get().suggest();
-          }
+          if (nextTask.kind === "suggest") void get().suggest();
         }
       }
     }
@@ -1086,4 +1080,28 @@ export const useStore = create<AppStore>((set, get) => ({
     set({ isSmartWaiting: false, smartWaitConfidence: null });
     void get().suggest();
   },
+
+  finalizeAnswer(final: Answer, lastQuestion: string, segments: TranscriptSegment[]) {
+    const verifiedSpec = verifyAzureSpecs(final.text);
+    const verifiedAnswer = { ...final, verifiedSpec };
+    set((s) => ({
+      answersList: [...s.answersList.filter((a) => a.id !== final.id), verifiedAnswer],
+    }));
+
+    void bridge.saveMessage({
+      id: final.id,
+      conversationId: get().conversationId,
+      role: "assistant",
+      content: final.text,
+      attachments: JSON.stringify([]),
+      citations: JSON.stringify(final.citations),
+      provider: final.provider ?? null,
+      model: final.model ?? null,
+      latencyMs: final.latencyMs != null ? Math.round(final.latencyMs) : null,
+      firstTokenMs: final.firstTokenMs != null ? Math.round(final.firstTokenMs) : null,
+      createdAt: Date.now(),
+    }).catch(console.error);
+
+    void get().analyzeInterviewTurn(lastQuestion, final.text, segments.map((segment) => `${segment.speaker}: ${segment.text}`).join("\n"));
+  }
 }));
