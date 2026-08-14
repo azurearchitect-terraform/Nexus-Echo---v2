@@ -1132,8 +1132,69 @@ export function Overlay() {
                 </div>
               ) : (
                 <div className="flex flex-col gap-2 no-drag font-mono text-[10px]">
-                  {/* Row 1: Selectors & Control Inputs */}
+                  {/* Row 1: Status Badges (Moved to top) */}
                   <div className="flex items-center justify-between gap-2 w-full">
+                    {(() => {
+                      const geminiProv = settings.providers.find((p) => p.id === "gemini" && p.enabled);
+                      const openaiProv = settings.providers.find((p) => p.id === "openai" && p.enabled);
+                      const hasGeminiKey = Boolean(geminiProv?.keyRef);
+                      const hasOpenAIKey = Boolean(openaiProv?.keyRef);
+                      const sttLabel = hasGeminiKey ? "STT: Gemini 3.6" : hasOpenAIKey ? "STT: Whisper" : "STT: No Key";
+                      return (
+                        <div className="flex items-center gap-1.5 overflow-x-auto py-0.5">
+                          <span
+                            onClick={() => void bridge.openDashboard()}
+                            className={cn(
+                              "flex items-center gap-1 rounded border px-1.5 py-0.5 cursor-pointer transition-colors text-[9px]",
+                              hasGeminiKey
+                                ? "border-accent/30 bg-accent/10 text-accent"
+                                : "border-warn/40 bg-warn/10 text-warn hover:bg-warn/20"
+                            )}
+                            title={hasGeminiKey ? "Gemini API Key Active" : "Gemini API key missing. Click to open Settings."}
+                          >
+                            <span className={cn("h-1 w-1 rounded-full", hasGeminiKey ? "bg-accent" : "bg-warn animate-pulse")} />
+                            Gemini
+                          </span>
+
+                          <span
+                            onClick={() => void bridge.openDashboard()}
+                            className={cn(
+                              "flex items-center gap-1 rounded border px-1.5 py-0.5 cursor-pointer transition-colors text-[9px]",
+                              hasOpenAIKey
+                                ? "border-emerald-500/30 bg-emerald-500/10 text-emerald-400"
+                                : "border-white/10 bg-white/5 text-white/40 hover:bg-white/10"
+                            )}
+                            title={hasOpenAIKey ? "OpenAI API Key Active" : "OpenAI API key optional. Click to open Settings."}
+                          >
+                            <span className={cn("h-1 w-1 rounded-full", hasOpenAIKey ? "bg-emerald-400" : "bg-white/30")} />
+                            OpenAI
+                          </span>
+
+                          <span
+                            onClick={() => void bridge.openDashboard()}
+                            className={cn(
+                              "flex items-center gap-1 rounded border px-1.5 py-0.5 cursor-pointer transition-colors text-[9px]",
+                              hasGeminiKey || hasOpenAIKey
+                                ? "border-emerald-500/30 bg-emerald-500/10 text-emerald-400"
+                                : "border-warn/40 bg-warn/10 text-warn hover:bg-warn/20"
+                            )}
+                            title={hasGeminiKey || hasOpenAIKey ? `Active Speech Engine: ${sttLabel}` : "No STT key configured. Click to open Settings."}
+                          >
+                            <Mic className={cn("h-2 w-2", hasGeminiKey || hasOpenAIKey ? "text-emerald-400" : "text-warn")} />
+                            {sttLabel}
+                          </span>
+                        </div>
+                      );
+                    })()}
+
+                    <span className="ml-auto flex items-center gap-1 text-[9px] text-white/25 shrink-0">
+                      <Command className="h-2 w-2" />
+                      <span className="kbd">⌘⇧↵</span>
+                    </span>
+                  </div>
+
+                  {/* Row 2: Selectors & Control Inputs (Moved below badges) */}
+                  <div className="flex items-center justify-between gap-2 border-t border-white/5 pt-1.5 w-full">
                     <div className="flex items-center gap-1.5 flex-wrap">
                       {/* Quick STT Engine Selector */}
                       <select
@@ -1246,67 +1307,6 @@ export function Overlay() {
                         )
                       )}
                     </div>
-                  </div>
-
-                  {/* Row 2: Status Badges */}
-                  <div className="flex items-center justify-between gap-2 border-t border-white/5 pt-1.5 w-full">
-                    {(() => {
-                      const geminiProv = settings.providers.find((p) => p.id === "gemini" && p.enabled);
-                      const openaiProv = settings.providers.find((p) => p.id === "openai" && p.enabled);
-                      const hasGeminiKey = Boolean(geminiProv?.keyRef);
-                      const hasOpenAIKey = Boolean(openaiProv?.keyRef);
-                      const sttLabel = hasGeminiKey ? "STT: Gemini 3.6" : hasOpenAIKey ? "STT: Whisper" : "STT: No Key";
-                      return (
-                        <div className="flex items-center gap-1.5 overflow-x-auto py-0.5">
-                          <span
-                            onClick={() => void bridge.openDashboard()}
-                            className={cn(
-                              "flex items-center gap-1 rounded border px-1.5 py-0.5 cursor-pointer transition-colors text-[9px]",
-                              hasGeminiKey
-                                ? "border-accent/30 bg-accent/10 text-accent"
-                                : "border-warn/40 bg-warn/10 text-warn hover:bg-warn/20"
-                            )}
-                            title={hasGeminiKey ? "Gemini API Key Active" : "Gemini API key missing. Click to open Settings."}
-                          >
-                            <span className={cn("h-1 w-1 rounded-full", hasGeminiKey ? "bg-accent" : "bg-warn animate-pulse")} />
-                            Gemini
-                          </span>
-
-                          <span
-                            onClick={() => void bridge.openDashboard()}
-                            className={cn(
-                              "flex items-center gap-1 rounded border px-1.5 py-0.5 cursor-pointer transition-colors text-[9px]",
-                              hasOpenAIKey
-                                ? "border-emerald-500/30 bg-emerald-500/10 text-emerald-400"
-                                : "border-white/10 bg-white/5 text-white/40 hover:bg-white/10"
-                            )}
-                            title={hasOpenAIKey ? "OpenAI API Key Active" : "OpenAI API key optional. Click to open Settings."}
-                          >
-                            <span className={cn("h-1 w-1 rounded-full", hasOpenAIKey ? "bg-emerald-400" : "bg-white/30")} />
-                            OpenAI
-                          </span>
-
-                          <span
-                            onClick={() => void bridge.openDashboard()}
-                            className={cn(
-                              "flex items-center gap-1 rounded border px-1.5 py-0.5 cursor-pointer transition-colors text-[9px]",
-                              hasGeminiKey || hasOpenAIKey
-                                ? "border-emerald-500/30 bg-emerald-500/10 text-emerald-400"
-                                : "border-warn/40 bg-warn/10 text-warn hover:bg-warn/20"
-                            )}
-                            title={hasGeminiKey || hasOpenAIKey ? `Active Speech Engine: ${sttLabel}` : "No STT key configured. Click to open Settings."}
-                          >
-                            <Mic className={cn("h-2 w-2", hasGeminiKey || hasOpenAIKey ? "text-emerald-400" : "text-warn")} />
-                            {sttLabel}
-                          </span>
-                        </div>
-                      );
-                    })()}
-
-                    <span className="ml-auto flex items-center gap-1 text-[9px] text-white/25 shrink-0">
-                      <Command className="h-2 w-2" />
-                      <span className="kbd">⌘⇧↵</span>
-                    </span>
                   </div>
                 </div>
               )}
