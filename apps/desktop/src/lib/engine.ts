@@ -388,7 +388,7 @@ export class Engine {
   }
 
   /** Listen mode: generate what the user should say next, from the live transcript. */
-  async *suggest(segments: TranscriptSegment[]): AsyncGenerator<StreamEvent> {
+  async *suggest(segments: TranscriptSegment[], signal?: AbortSignal): AsyncGenerator<StreamEvent> {
     if (!this.settings) throw new Error("engine is not configured");
     const window = segments.length ? transcriptWindow(segments) : "The user is in a live conversation and needs a quick, direct, and relevant response.";
     const lastQuestion = [...segments].reverse().find((s) => s.source === "system")?.text ?? window;
@@ -416,6 +416,7 @@ export class Engine {
       ],
       policy: this.settings.routing,
       models: this.models(),
+      signal,
     })) {
       if (event.type === "token") {
         fullAnswer += event.delta;

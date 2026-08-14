@@ -43,6 +43,8 @@ export const RoutingPolicy = z.object({
   firstTokenTimeoutMs: z.number().int().min(200).default(2500),
   /** Speculative prefetch: start generating before the user finishes speaking. */
   speculativePrefetch: z.boolean().default(true),
+  /** Ms of silence before triggering speculative background generation. */
+  speculativeWaitMs: z.number().int().min(50).max(2000).default(350),
   /** Refuse any network call regardless of provider config. */
   airgapped: z.boolean().default(false),
 });

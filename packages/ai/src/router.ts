@@ -13,6 +13,8 @@ export interface RouterInput {
   maxTokens?: number;
   /** When true, enables the provider's native JSON output mode for structured responses. */
   jsonMode?: boolean;
+  /** Optional abort signal to cancel the generation mid-flight. */
+  signal?: AbortSignal;
 }
 
 interface Health {
@@ -171,6 +173,13 @@ export class HybridRouter {
       queue.push(e);
       notify?.();
     };
+
+    if (input.signal) {
+      if (input.signal.aborted) return;
+      input.signal.addEventListener("abort", () => {
+        controllers.forEach((c) => c.abort());
+      }, { once: true });
+    }
 
     const timeout = setTimeout(() => {
       if (!winner) {

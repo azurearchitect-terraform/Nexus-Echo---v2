@@ -149,8 +149,12 @@ export function Overlay() {
     reset,
     setSpeakerPacing,
     stopGeneration,
-    autoSendCountdown,
-    cancelAutoSendCountdown,
+    isSmartWaiting,
+    smartWaitConfidence,
+    cancelSmartWait,
+    sendNow,
+    isSpeculating,
+    speculativeAnswer,
   } = useStore();
 
   const [input, setInput] = useState("");
@@ -175,7 +179,9 @@ export function Overlay() {
 
   // Smooth character-drip typewriter for the live streaming answer.
   // Architecture: rAF loop drains pending chars at 3 chars/frame — no setTimeout jitter.
-  const typedText = useTypewriter(answer?.text ?? "", streaming, 6);
+  const activeAnswer = isSpeculating ? speculativeAnswer : answer;
+  const activeStreaming = streaming || isSpeculating;
+  const typedText = useTypewriter(activeAnswer?.text ?? "", activeStreaming, 6);
 
   // ---- hotkeys from the Rust side -------------------------------------------
   useEffect(() => {
@@ -414,7 +420,7 @@ export function Overlay() {
       <section className="panel relative flex min-h-0 flex-1 flex-col overflow-hidden">
         <div
           onMouseDown={() => startResize("North")}
-          className="no-drag absolute left-3 right-3 top-0 z-30 h-5 cursor-n-resize"
+          className="no-drag absolute left-3 right-3 top-0 z-30 h-3 cursor-n-resize"
           title="Drag the top edge to resize"
         >
           <div className="mx-auto mt-1.5 h-1.5 w-28 rounded-full bg-white/25" />
@@ -430,8 +436,8 @@ export function Overlay() {
           title="Drag the right edge to resize"
         />
         {/* ---------- header: the only drag surface ---------- */}
-        <header className="drag-region flex shrink-0 items-center gap-3 border-b border-glass-edge px-3 py-2">
-          <div className="flex items-center gap-1 rounded-lg bg-black/30 p-0.5 no-drag">
+        <header data-tauri-drag-region className="drag-region flex shrink-0 items-center gap-3 border-b border-glass-edge px-3 pb-2 pt-4">
+          <div data-tauri-drag-region="false" className="flex items-center gap-1 rounded-lg bg-black/30 p-0.5 no-drag">
             <ModeTab
               icon={<MessageSquare className="h-3 w-3" />}
               label="Ask"
@@ -454,6 +460,7 @@ export function Overlay() {
 
           <div className="flex flex-1 items-center gap-2.5">
             <select
+              data-tauri-drag-region="false"
               value={settings.routing.mode}
               onChange={(e) =>
                 void saveSettings({
@@ -470,7 +477,7 @@ export function Overlay() {
               <option value="offline" className="bg-neutral-900 text-white font-mono text-[11px] py-1">🔒 Offline (Ollama)</option>
             </select>
 
-            <div className="flex items-center gap-1.5 border-l border-white/10 pl-2 no-drag">
+            <div data-tauri-drag-region="false" className="flex items-center gap-1.5 border-l border-white/10 pl-2 no-drag">
 
               {/* Quick Primary Provider Switcher */}
               <button
@@ -539,7 +546,7 @@ export function Overlay() {
               </button>
             </div>
 
-            <div className="flex items-center gap-1 border-l border-white/10 pl-2 no-drag" title="UI Accent Color">
+            <div data-tauri-drag-region="false" className="flex items-center gap-1 border-l border-white/10 pl-2 no-drag" title="UI Accent Color">
               <input
                 type="color"
                 value={settings.accentColor || "#6ee7b7"}
@@ -549,7 +556,7 @@ export function Overlay() {
               />
             </div>
 
-            <div className="flex items-center gap-1.5 text-[11px] font-medium ml-auto no-drag">
+            <div data-tauri-drag-region="false" className="flex items-center gap-1.5 text-[11px] font-medium ml-auto no-drag">
               {!settings.audio.captureMicrophone && !settings.audio.captureSystemAudio ? (
                 <span className="flex items-center gap-1 text-amber-500 animate-pulse font-bold" title="WARNING: Both Microphone and System Audio are disabled. The app cannot hear anything!">
                   <span>🔇 Deaf Mode</span>
@@ -596,7 +603,21 @@ export function Overlay() {
             </div>
           </div>
 
-          <div className="flex items-center gap-0.5 no-drag">
+          <div data-tauri-drag-region="false" className="flex items-center gap-0.5 no-drag">
+            <div className="flex items-center gap-1 border-r border-white/10 pr-1.5 mr-0.5">
+              <span className="text-[10px] font-semibold text-white/50" title="Speculative ghost text trigger time (ms)">Ghost:</span>
+              <input
+                type="range"
+                min="50"
+                max="1000"
+                step="50"
+                value={settings.routing.speculativeWaitMs ?? 350}
+                onChange={(e) => void saveSettings({ ...settings, routing: { ...settings.routing, speculativeWaitMs: parseInt(e.target.value, 10) } })}
+                className="w-14 accent-accent cursor-pointer"
+                title={`Trigger ghost text after ${settings.routing.speculativeWaitMs ?? 350}ms silence`}
+              />
+              <span className="text-[9px] text-accent w-6 text-right font-mono">{settings.routing.speculativeWaitMs ?? 350}ms</span>
+            </div>
             <button
               className="btn-ghost"
               onClick={() => setAnswerFontSize(Math.max(10, answerFontSize - 2))}
@@ -980,8 +1001,8 @@ export function Overlay() {
                   {/* Appended Q&A Feed (Newest Question on Top) */}
                   {(() => {
                     const activeAnswerList = [
-                      ...answersList.filter((a) => a.id !== answer?.id),
-                      ...(answer && (answer.text || streaming) ? [answer] : []),
+                      ...answersList.filter((a) => a.id !== activeAnswer?.id),
+                      ...(activeAnswer && (activeAnswer.text || activeStreaming) ? [activeAnswer] : []),
                     ].reverse();
 
                     if (activeAnswerList.length === 0) return null;
@@ -989,17 +1010,19 @@ export function Overlay() {
                     return (
                       <div className="mt-3 pt-2 border-t border-white/10 space-y-4">
                         {activeAnswerList.map((item, idx) => {
-                          const isCurrentStreaming = streaming && item.id === answer?.id;
+                          const isCurrentStreaming = activeStreaming && item.id === activeAnswer?.id;
+                          const isGhost = isSpeculating && item.id === activeAnswer?.id;
+                          
                           return (
-                            <div key={item.id} className="animate-fade-up">
+                            <div key={item.id} className={`animate-fade-up ${isGhost ? 'opacity-50 grayscale contrast-125' : ''}`}>
                               {/* Question Label */}
                               <div className="mb-1.5 flex items-start gap-1.5 font-semibold text-accent text-[13px]">
                                 <Sparkles className="h-3.5 w-3.5 mt-0.5 shrink-0 text-accent" />
                                 <span>Q: {item.question || "Live Question"}</span>
                               </div>
 
-                              <div className="leading-relaxed text-white/90">
-                                <Markdown style={{ fontSize: `${answerFontSize}px` }}>{item.text || "…"}</Markdown>
+                              <div className={`leading-relaxed ${isGhost ? 'italic text-white/80' : 'text-white/90'}`}>
+                                <Markdown style={{ fontSize: `${answerFontSize}px` }}>{isCurrentStreaming ? typedText : (item.text || "…")}</Markdown>
                                 {isCurrentStreaming && (
                                   <span className="inline-block h-4 w-[2px] rounded-sm bg-accent align-middle ml-0.5 animate-[typewriterBlink_0.6s_ease-in-out_infinite]" />
                                 )}
@@ -1184,21 +1207,25 @@ export function Overlay() {
                           <Square className="h-2.5 w-2.5 fill-current" />
                           <span>Stop</span>
                         </button>
-                      ) : autoSendCountdown !== null ? (
+                      ) : isSmartWaiting ? (
                         <div className="flex items-center gap-1.5 font-mono text-[9px] text-amber-400 animate-pulse border border-amber-500/20 bg-amber-500/10 px-2 py-0.5 rounded-md">
-                          <span>⌛ Auto-sending in {autoSendCountdown}s...</span>
+                          <span className="flex items-center gap-1">
+                            ⌛ Waiting
+                            {smartWaitConfidence !== null && (
+                              <span className="text-[8px] text-amber-400/70">
+                                ({Math.round(smartWaitConfidence * 100)}%)
+                              </span>
+                            )}
+                          </span>
                           <button
-                            onClick={() => {
-                              cancelAutoSendCountdown();
-                              void suggest();
-                            }}
+                            onClick={() => sendNow()}
                             className="text-emerald-400 hover:text-emerald-300 font-bold ml-1.5 cursor-pointer underline"
                             title="Send immediately"
                           >
                             Send Now
                           </button>
                           <button
-                            onClick={() => cancelAutoSendCountdown()}
+                            onClick={() => cancelSmartWait()}
                             className="text-rose-400 hover:text-rose-300 font-bold ml-1.5 cursor-pointer underline"
                             title="Hold sending"
                           >
@@ -1530,7 +1557,7 @@ async function transcribe(wavBase64: string, language: string): Promise<string> 
     );
     for (const model of candidateModels) {
       const controller = new AbortController();
-      const timeoutId = setTimeout(() => controller.abort(), 3500);
+      const timeoutId = setTimeout(() => controller.abort(), 12000);
       try {
         const res = await fetch(
           `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${apiKey}`,
@@ -1559,7 +1586,7 @@ async function transcribe(wavBase64: string, language: string): Promise<string> 
         }
       } catch (e: any) {
         clearTimeout(timeoutId);
-        errors.push(`Gemini network: ${e.name === "AbortError" ? "Timeout after 3.5s" : e.message || String(e)}`);
+        errors.push(`Gemini network: ${e.name === "AbortError" ? "Timeout after 12s" : e.message || String(e)}`);
       }
     }
     return "";
@@ -1577,7 +1604,7 @@ async function transcribe(wavBase64: string, language: string): Promise<string> 
       return "";
     }
     const controller = new AbortController();
-    const timeoutId = setTimeout(() => controller.abort(), 3500);
+    const timeoutId = setTimeout(() => controller.abort(), 12000);
     try {
       const binary = atob(wavBase64);
       const bytes = new Uint8Array(binary.length);
@@ -1602,14 +1629,14 @@ async function transcribe(wavBase64: string, language: string): Promise<string> 
       }
     } catch (e: any) {
       clearTimeout(timeoutId);
-      errors.push(`OpenAI network: ${e.name === "AbortError" ? "Timeout after 3.5s" : e.message || String(e)}`);
+      errors.push(`OpenAI network: ${e.name === "AbortError" ? "Timeout after 12s" : e.message || String(e)}`);
     }
     return "";
   };
 
   const tryLocal = async (): Promise<string> => {
     const controller = new AbortController();
-    const timeoutId = setTimeout(() => controller.abort(), 3500);
+    const timeoutId = setTimeout(() => controller.abort(), 12000);
     try {
       const res = await fetch("http://127.0.0.1:8080/inference", {
         method: "POST",
@@ -1626,7 +1653,7 @@ async function transcribe(wavBase64: string, language: string): Promise<string> 
       }
     } catch (e: any) {
       clearTimeout(timeoutId);
-      errors.push(`Local Whisper connection failed: ${e.name === "AbortError" ? "Timeout after 3.5s" : e.message || String(e)}`);
+      errors.push(`Local Whisper connection failed: ${e.name === "AbortError" ? "Timeout after 12s" : e.message || String(e)}`);
     }
     return "";
   };

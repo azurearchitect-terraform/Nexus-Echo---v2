@@ -82,7 +82,7 @@ interface AppStore {
   stopListening: () => Promise<void>;
   pushSegment: (segment: TranscriptSegment) => void;
   setSpeaking: (source: "microphone" | "system", speaking: boolean) => void;
-  suggest: () => Promise<void>;
+  suggest: (isSpeculative?: boolean) => Promise<void>;
   generateCoachingTip: () => Promise<void>;
   generateEndQuestions: () => Promise<void>;
   analyzeInterviewTurn: (question: string, answer: string, transcript?: string) => Promise<void>;
@@ -96,9 +96,13 @@ interface AppStore {
   reset: () => void;
   setSpeakerPacing: (pacing: SpeakerPacing, isAutoOverride?: boolean) => Promise<void>;
   stopGeneration: () => void;
-  autoSendCountdown: number | null;
-  startAutoSendCountdown: () => void;
-  cancelAutoSendCountdown: () => void;
+  isSmartWaiting: boolean;
+  smartWaitConfidence: number | null;
+  cancelSmartWait: () => void;
+  sendNow: () => void;
+  
+  isSpeculating: boolean;
+  speculativeAnswer: Answer | null;
 }
 
 const DEFAULT_SETTINGS = AppSettings.parse({
@@ -110,7 +114,94 @@ const DEFAULT_SETTINGS = AppSettings.parse({
 });
 
 let suggestDebounceTimer: ReturnType<typeof setTimeout> | null = null;
-let countdownTimer: ReturnType<typeof setInterval> | null = null;
+let smartWaitTimer: ReturnType<typeof setTimeout> | null = null;
+let speculativeWaitTimer: ReturnType<typeof setTimeout> | null = null;
+let speculativeAbortController: AbortController | null = null;
+
+// ─── INCOMPLETE SENTENCE STARTERS ──────────────────────────────
+// These phrases typically begin multi-part scenario questions.
+// If the transcript STARTS with one of these and does not yet
+// contain a question word (what/how/why/explain), it is almost
+// certainly incomplete.
+const SCENARIO_STARTERS = [
+  "suppose", "consider", "imagine", "given", "let's say", "let us say",
+  "scenario", "think about", "picture this", "say you have",
+  "assume", "pretend", "take a case",
+];
+
+/**
+ * Analyzes whether a transcript chunk represents a COMPLETE interview
+ * question that is ready to be sent to the LLM.
+ *
+ * Returns a confidence score from 0.0 (definitely incomplete) to 1.0
+ * (definitely complete). The caller uses this to set a dynamic wait:
+ *   - >= 0.85  → submit almost immediately (300ms buffer)
+ *   - 0.50–0.84 → moderate wait (1000–2000ms)
+ *   - < 0.50  → long wait (3000–5000ms), question is likely incomplete
+ */
+function analyzeQuestionCompleteness(text: string, sttConfidence?: number): number {
+  const trimmed = text.trim();
+  if (!trimmed) return 0;
+
+  const lower = trimmed.toLowerCase();
+  const words = lower.split(/\s+/).filter(Boolean);
+  if (words.length === 0) return 0;
+
+  let score = 0.5; // Start neutral
+
+  // ── Signal 1: Ends with question mark → strong completion signal
+  if (trimmed.endsWith("?")) {
+    score += 0.35;
+  }
+
+  // ── Signal 2: Ends with period or exclamation → likely complete statement
+  if (trimmed.endsWith(".") || trimmed.endsWith("!")) {
+    score += 0.20;
+  }
+
+  // ── Signal 3: Ends with trailing connector → definitely incomplete
+  const lastWord = words[words.length - 1];
+  if (lastWord && INCOMPLETE_TRAILING_WORDS.includes(lastWord)) {
+    score -= 0.40;
+  }
+
+  // ── Signal 4: Starts with scenario starter without question word
+  const startsWithScenario = SCENARIO_STARTERS.some((s) => lower.startsWith(s));
+  const hasQuestionWord = ["what", "how", "why", "explain", "describe", "tell me", "walk me"].some(
+    (q) => lower.includes(q),
+  );
+  if (startsWithScenario && !hasQuestionWord) {
+    score -= 0.30;
+  }
+
+  // ── Signal 5: Contains a question word → boost
+  if (hasQuestionWord) {
+    score += 0.10;
+  }
+
+  // ── Signal 6: Very short transcript (< 5 words) without question mark
+  if (words.length < 5 && !trimmed.endsWith("?")) {
+    score -= 0.15;
+  }
+
+  // ── Signal 7: Reasonable length (8+ words) with question structure
+  if (words.length >= 8 && (trimmed.endsWith("?") || hasQuestionWord)) {
+    score += 0.10;
+  }
+
+  // ── Signal 8: STT confidence factor
+  if (sttConfidence !== undefined && sttConfidence < 0.6) {
+    score -= 0.15; // Low STT confidence → might be garbled mid-sentence
+  }
+
+  // ── Signal 9: Ends with an ellipsis-like pattern ("...")
+  if (trimmed.endsWith("...") || trimmed.endsWith("…")) {
+    score -= 0.35;
+  }
+
+  // Clamp to [0, 1]
+  return Math.max(0, Math.min(1, score));
+}
 
 const NON_QUESTION_PHRASES = new Set([
   "hello", "hi", "hey", "thank you", "thanks", "okay", "ok", "got it", "sure",
@@ -214,7 +305,11 @@ export const useStore = create<AppStore>((set, get) => ({
   endInterviewQuestions: [],
   isGeneratingEndQuestions: false,
   latestCompanyIntel: null,
-  autoSendCountdown: null,
+  isSmartWaiting: false,
+  smartWaitConfidence: null,
+  
+  isSpeculating: false,
+  speculativeAnswer: null,
 
   manualPersona: null,
   interviewMode: loadInterviewMode(),
@@ -440,11 +535,11 @@ export const useStore = create<AppStore>((set, get) => ({
       const summary = await engine.summarizeMeeting(segments);
       await bridge.finalizeMeeting({
         meetingId,
-        title: summary.title,
-        summary: summary.summary,
-        decisions: JSON.stringify(summary.decisions),
-        actionItems: JSON.stringify(summary.actionItems),
-        participants: JSON.stringify(summary.participants),
+        title: summary.title || "Untitled meeting",
+        summary: summary.summary || "No summary available.",
+        decisions: JSON.stringify(summary.decisions || []),
+        actionItems: JSON.stringify(summary.actionItems || []),
+        participants: JSON.stringify(summary.participants || []),
       });
       void emit("nexus://meeting-finalized", { meetingId, summary });
 
@@ -526,14 +621,11 @@ export const useStore = create<AppStore>((set, get) => ({
           clearTimeout(suggestDebounceTimer);
           suggestDebounceTimer = null;
         }
-        if (countdownTimer) {
-          clearInterval(countdownTimer);
-          countdownTimer = null;
-          set({ autoSendCountdown: null });
-          console.log("[Pacing] Candidate started speaking during countdown. Triggering suggested answer immediately!");
-          void get().suggest();
-        } else if (suggestDebounceTimer) {
-          console.log("[Pacing] Candidate started speaking during pause. Triggering suggestion immediately!");
+        if (smartWaitTimer) {
+          clearTimeout(smartWaitTimer);
+          smartWaitTimer = null;
+          set({ isSmartWaiting: false, smartWaitConfidence: null });
+          console.log("[SmartWait] Candidate started speaking. Triggering suggested answer immediately!");
           void get().suggest();
         }
         return; // Candidate speaking does not trigger new suggestions
@@ -541,19 +633,32 @@ export const useStore = create<AppStore>((set, get) => ({
 
       // ONLY trigger live suggestions if auto-respond is enabled and the speaker is the interviewer ("system")
       if (get().settings.autoRespond !== "manual-only" && segment.source === "system") {
-        // Cancel active countdown if one was running (interviewer is still speaking!)
-        if (countdownTimer) {
-          clearInterval(countdownTimer);
-          countdownTimer = null;
-          set({ autoSendCountdown: null });
+        // Cancel active smart wait if one was running (interviewer is still speaking!)
+        if (smartWaitTimer) {
+          clearTimeout(smartWaitTimer);
+          smartWaitTimer = null;
+          set({ isSmartWaiting: false, smartWaitConfidence: null });
         }
         if (suggestDebounceTimer) {
           clearTimeout(suggestDebounceTimer);
           suggestDebounceTimer = null;
         }
+        if (speculativeWaitTimer) {
+          clearTimeout(speculativeWaitTimer);
+          speculativeWaitTimer = null;
+        }
+        if (speculativeAbortController) {
+          speculativeAbortController.abort();
+          speculativeAbortController = null;
+          set({ speculativeAnswer: null, isSpeculating: false });
+          console.log("[Speculative] Interrupted by new speech. Aborting background generation.");
+        }
 
-        const recentSegments = get().segments.slice(-3);
-        const combinedText = recentSegments.map((s) => s.text).join(" ");
+        const recentSegments = get().segments.slice(-5);
+        const combinedText = recentSegments
+          .filter((s) => s.source === "system")
+          .map((s) => s.text)
+          .join(" ");
 
         // Auto-trigger end-of-interview candidate questions when interviewer asks "do you have any questions for us?"
         if (/do you have any questions|any questions for (us|me|our team)|any questions from your/i.test(combinedText)) {
@@ -583,30 +688,60 @@ export const useStore = create<AppStore>((set, get) => ({
           }
         }
 
-        // Determine debounce delay based on speaker pacing setting
-        let delay = 1600; // default for normal
-        const pacing = settings.audio.speakerPacing;
-        if (pacing === "fast") delay = 800;
-        else if (pacing === "slow") delay = 2500;
-        else if (pacing === "auto") delay = 2000;
+        // ── SMART WAIT: Question Completion Detection ──
+        // Analyze the combined transcript to determine if the question is complete.
+        // Use the latest segment's confidence if available.
+        const sttConfidence = segment.confidence ?? undefined;
+        const completeness = analyzeQuestionCompleteness(combinedText, sttConfidence);
 
-        if (isIncompleteScenario(combinedText)) {
-          suggestDebounceTimer = setTimeout(() => {
-            suggestDebounceTimer = null;
-            get().startAutoSendCountdown();
-          }, delay);
+        // Pacing multiplier: slow speakers get longer waits
+        const pacing = settings.audio.speakerPacing;
+        let pacingMultiplier = 1.0;
+        if (pacing === "fast") pacingMultiplier = 0.5;
+        else if (pacing === "slow") pacingMultiplier = 1.8;
+        else if (pacing === "auto") pacingMultiplier = 1.3;
+
+        // Dynamic wait time based on completeness confidence
+        let waitMs: number;
+        if (completeness >= 0.85) {
+          // High confidence: question looks complete → minimal buffer
+          waitMs = Math.round(300 * pacingMultiplier);
+        } else if (completeness >= 0.60) {
+          // Moderate confidence: probably complete but give a beat
+          waitMs = Math.round(1200 * pacingMultiplier);
+        } else if (completeness >= 0.40) {
+          // Low-moderate: likely mid-sentence → longer wait
+          waitMs = Math.round(2500 * pacingMultiplier);
         } else {
-          // Even if it looks complete, wait a tiny bit (800ms) in slow mode to make sure they aren't just pausing
-          const waitTime = pacing === "slow" ? 800 : 0;
-          if (waitTime > 0) {
-            suggestDebounceTimer = setTimeout(() => {
-              suggestDebounceTimer = null;
-              get().startAutoSendCountdown();
-            }, waitTime);
-          } else {
-            get().startAutoSendCountdown();
-          }
+          // Low confidence: almost certainly incomplete → extended wait
+          waitMs = Math.round(4000 * pacingMultiplier);
         }
+
+        console.log(
+          `[SmartWait] Completeness: ${(completeness * 100).toFixed(0)}% | ` +
+          `Wait: ${waitMs}ms | Pacing: ${pacing} (×${pacingMultiplier}) | ` +
+          `Text: "${combinedText.slice(0, 60)}${combinedText.length > 60 ? "…" : ""}"`
+        );
+
+        set({ isSmartWaiting: true, smartWaitConfidence: completeness });
+
+        // Speculative Execution Timer
+        const baseSpeculativeMs = settings.routing.speculativeWaitMs ?? 350;
+        const dynamicSpeculativeMs = Math.round(baseSpeculativeMs * pacingMultiplier);
+        
+        // Set this up if smart wait is going to take longer than speculative wait anyway.
+        if (waitMs > dynamicSpeculativeMs) {
+          speculativeWaitTimer = setTimeout(() => {
+            speculativeWaitTimer = null;
+            void get().suggest(true);
+          }, dynamicSpeculativeMs);
+        }
+
+        smartWaitTimer = setTimeout(() => {
+          smartWaitTimer = null;
+          set({ isSmartWaiting: false, smartWaitConfidence: null });
+          void get().suggest();
+        }, waitMs);
       }
     }
   },
@@ -754,11 +889,19 @@ export const useStore = create<AppStore>((set, get) => ({
     }
   },
 
-  async suggest() {
-    if (get().streaming) {
+  async suggest(isSpeculative = false) {
+    if (get().streaming && !isSpeculative) {
+      if (get().isSpeculating) {
+        console.log("[Speculative] Promoting background answer to foreground!");
+        set({ isSpeculating: false, answer: get().speculativeAnswer, streaming: true });
+        return;
+      }
       set((s) => ({ questionBuffer: [...s.questionBuffer, { kind: "suggest" }] }));
       return;
     }
+    
+    if (get().streaming && isSpeculative) return;
+
     const segments = get().segments;
     const recent = segments.slice(-3);
     const lastQuestion = recent.map((s) => s.text.trim()).filter(Boolean).join(" ") || "Live Question";
@@ -766,36 +909,52 @@ export const useStore = create<AppStore>((set, get) => ({
     if (persona) set({ detectedPersona: persona });
 
     const answerId = uid("ans");
-    set({
-      streaming: true,
-      answer: { id: answerId, question: lastQuestion || undefined, persona, text: "", citations: [] },
-    });
+    let abortController: AbortController | undefined;
+
+    if (isSpeculative) {
+      speculativeAbortController = new AbortController();
+      abortController = speculativeAbortController;
+      console.log("[Speculative] Starting background generation...");
+      set({
+        isSpeculating: true,
+        speculativeAnswer: { id: answerId, question: lastQuestion || undefined, persona, text: "", citations: [] },
+      });
+    } else {
+      set({
+        streaming: true,
+        answer: { id: answerId, question: lastQuestion || undefined, persona, text: "", citations: [] },
+      });
+    }
+
     try {
-      for await (const event of engine.suggest(segments)) {
-        if (!get().streaming) break;
+      for await (const event of engine.suggest(segments, abortController?.signal)) {
+        const state = get();
+        const isPromoted = isSpeculative && !state.isSpeculating;
+        const targetKey = (isSpeculative && !isPromoted) ? "speculativeAnswer" : "answer";
+
+        if (!isSpeculative && !state.streaming) break;
+        if (isSpeculative && !state.isSpeculating && !state.streaming) break;
+        
+        const currentAns = state[targetKey];
+        if (!currentAns) continue;
+
         if (event.type === "token") {
-          set((s) => ({ answer: s.answer ? { ...s.answer, text: s.answer.text + event.delta } : s.answer }));
+          set({ [targetKey]: { ...currentAns, text: currentAns.text + event.delta } });
         } else if (event.type === "swap") {
-          // Deep model is taking over — clear the fast answer so deep streams in cleanly
-          set((s) => ({
-            answer: s.answer
-              ? { ...s.answer, text: "", provider: event.provider, model: event.model, swapped: true }
-              : s.answer,
-          }));
+          set({ [targetKey]: { ...currentAns, text: "", provider: event.provider, model: event.model, swapped: true } });
         } else if (event.type === "start") {
-          set((s) => ({
-            answer: s.answer ? { ...s.answer, provider: event.provider, model: event.model } : s.answer,
-          }));
+          set({ [targetKey]: { ...currentAns, provider: event.provider, model: event.model } });
         } else if (event.type === "done") {
-          set((s) => ({
-            answer: s.answer
-              ? { ...s.answer, latencyMs: event.latencyMs, firstTokenMs: event.firstTokenMs, isCached: (event as any).isCached }
-              : s.answer,
-          }));
-        } else if (event.type === "error") {
-          set((s) => ({ answer: s.answer ? { ...s.answer, error: event.message } : s.answer }));
+          set({ [targetKey]: { ...currentAns, latencyMs: event.latencyMs, firstTokenMs: event.firstTokenMs, isCached: (event as any).isCached } });
+        } else if (event.type === "error" && !abortController?.signal.aborted) {
+          set({ [targetKey]: { ...currentAns, error: event.message } });
         }
       }
+      
+      if (isSpeculative && get().isSpeculating) {
+        return; // Finished speculatively but never promoted
+      }
+
       const final = get().answer;
       if (final?.text) {
         const verifiedSpec = verifyAzureSpecs(final.text);
@@ -804,7 +963,6 @@ export const useStore = create<AppStore>((set, get) => ({
           answersList: [...s.answersList.filter((a) => a.id !== final.id), verifiedAnswer],
         }));
 
-        // Save the generated suggestion to SQLite!
         void bridge.saveMessage({
           id: final.id,
           conversationId: get().conversationId,
@@ -821,16 +979,21 @@ export const useStore = create<AppStore>((set, get) => ({
 
         void get().analyzeInterviewTurn(lastQuestion, final.text, segments.map((segment) => `${segment.speaker}: ${segment.text}`).join("\n"));
       }
-      // Follow-up generation disabled for clean UI
+    } catch (e: any) {
+      if (e.name !== "AbortError") console.error(e);
     } finally {
-      set({ streaming: false });
-      const nextTask = get().questionBuffer[0];
-      if (nextTask) {
-        set((s) => ({ questionBuffer: s.questionBuffer.slice(1) }));
-        if (nextTask.kind === "ask" && nextTask.prompt) {
-          void get().ask(nextTask.prompt, nextTask.useScreen ?? false);
-        } else if (nextTask.kind === "suggest") {
-          void get().suggest();
+      if (isSpeculative && get().isSpeculating) {
+        set({ isSpeculating: false });
+      } else {
+        set({ streaming: false });
+        const nextTask = get().questionBuffer[0];
+        if (nextTask) {
+          set((s) => ({ questionBuffer: s.questionBuffer.slice(1) }));
+          if (nextTask.kind === "ask" && nextTask.prompt) {
+            void get().ask(nextTask.prompt, nextTask.useScreen ?? false);
+          } else if (nextTask.kind === "suggest") {
+            void get().suggest();
+          }
         }
       }
     }
@@ -856,9 +1019,13 @@ export const useStore = create<AppStore>((set, get) => ({
   },
 
   reset() {
-    if (countdownTimer) {
-      clearInterval(countdownTimer);
-      countdownTimer = null;
+    if (smartWaitTimer) {
+      clearTimeout(smartWaitTimer);
+      smartWaitTimer = null;
+    }
+    if (suggestDebounceTimer) {
+      clearTimeout(suggestDebounceTimer);
+      suggestDebounceTimer = null;
     }
     set({
       answer: null,
@@ -869,45 +1036,46 @@ export const useStore = create<AppStore>((set, get) => ({
       followUps: [],
       questionBuffer: [],
       detectedPersona: null,
-      autoSendCountdown: null,
+      isSmartWaiting: false,
+      smartWaitConfidence: null,
     });
   },
 
   stopGeneration() {
-    if (countdownTimer) {
-      clearInterval(countdownTimer);
-      countdownTimer = null;
+    if (smartWaitTimer) {
+      clearTimeout(smartWaitTimer);
+      smartWaitTimer = null;
     }
-    set({ streaming: false, questionBuffer: [], autoSendCountdown: null });
+    if (suggestDebounceTimer) {
+      clearTimeout(suggestDebounceTimer);
+      suggestDebounceTimer = null;
+    }
+    set({ streaming: false, questionBuffer: [], isSmartWaiting: false, smartWaitConfidence: null });
   },
 
-  startAutoSendCountdown() {
-    if (countdownTimer) {
-      clearInterval(countdownTimer);
-      countdownTimer = null;
+  cancelSmartWait() {
+    if (smartWaitTimer) {
+      clearTimeout(smartWaitTimer);
+      smartWaitTimer = null;
     }
-    set({ autoSendCountdown: 3 });
-    countdownTimer = setInterval(() => {
-      const current = get().autoSendCountdown;
-      if (current !== null && current > 1) {
-        set({ autoSendCountdown: current - 1 });
-      } else {
-        if (countdownTimer) {
-          clearInterval(countdownTimer);
-          countdownTimer = null;
-        }
-        set({ autoSendCountdown: null });
-        void get().suggest();
-      }
-    }, 1000);
+    if (suggestDebounceTimer) {
+      clearTimeout(suggestDebounceTimer);
+      suggestDebounceTimer = null;
+    }
+    set({ isSmartWaiting: false, smartWaitConfidence: null });
+    console.log("[SmartWait] Wait canceled by user (Hold).");
   },
 
-  cancelAutoSendCountdown() {
-    if (countdownTimer) {
-      clearInterval(countdownTimer);
-      countdownTimer = null;
+  sendNow() {
+    if (smartWaitTimer) {
+      clearTimeout(smartWaitTimer);
+      smartWaitTimer = null;
     }
-    set({ autoSendCountdown: null });
-    console.log("[Pacing] Auto-send countdown canceled by user (Hold).");
+    if (suggestDebounceTimer) {
+      clearTimeout(suggestDebounceTimer);
+      suggestDebounceTimer = null;
+    }
+    set({ isSmartWaiting: false, smartWaitConfidence: null });
+    void get().suggest();
   },
 }));
