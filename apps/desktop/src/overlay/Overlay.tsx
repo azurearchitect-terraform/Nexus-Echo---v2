@@ -420,21 +420,25 @@ export function Overlay() {
       <section className="panel relative flex min-h-0 flex-1 flex-col overflow-hidden">
         <div
           onMouseDown={() => startResize("North")}
-          className="no-drag absolute left-3 right-3 top-0 z-30 h-6 cursor-n-resize"
+          className="no-drag absolute left-3 right-3 top-0 z-30 h-6 cursor-n-resize group flex justify-center items-start"
           title="Drag the top edge to resize"
         >
-          <div className="mx-auto mt-1.5 h-2 w-32 rounded-full bg-white/25" />
+          <div className="mt-1 h-1 w-32 rounded-full bg-white/20 group-hover:bg-accent/60 transition-colors" />
         </div>
         <div
           onMouseDown={() => startResize("West")}
-          className="no-drag absolute bottom-3 left-0 top-3 z-30 w-8 cursor-w-resize"
+          className="no-drag absolute bottom-3 left-0 top-3 z-30 w-8 cursor-w-resize group flex items-center justify-start"
           title="Drag the left edge to resize"
-        />
+        >
+          <div className="h-32 w-1 rounded-r-lg bg-white/10 group-hover:bg-accent/60 transition-colors" />
+        </div>
         <div
           onMouseDown={() => startResize("East")}
-          className="no-drag absolute bottom-3 right-0 top-3 z-30 w-8 cursor-e-resize"
+          className="no-drag absolute bottom-3 right-0 top-3 z-30 w-8 cursor-e-resize group flex items-center justify-end"
           title="Drag the right edge to resize"
-        />
+        >
+          <div className="h-32 w-1 rounded-l-lg bg-white/10 group-hover:bg-accent/60 transition-colors" />
+        </div>
         {/* ---------- header: the only drag surface ---------- */}
         <header data-tauri-drag-region className="drag-region flex shrink-0 items-center gap-3 border-b border-glass-edge px-3 pb-2 pt-4">
           <div data-tauri-drag-region="false" className="flex items-center gap-1 rounded-lg bg-black/30 p-0.5 no-drag">
