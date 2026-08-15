@@ -182,6 +182,7 @@ export function Overlay() {
   const activeAnswer = isSpeculating ? speculativeAnswer : answer;
   const activeStreaming = streaming || isSpeculating;
   const typedText = useTypewriter(activeAnswer?.text ?? "", activeStreaming, 6);
+  const isTyping = Boolean(activeAnswer?.text && typedText.length < activeAnswer.text.length);
 
   // ---- hotkeys from the Rust side -------------------------------------------
   useEffect(() => {
@@ -1248,9 +1249,9 @@ export function Overlay() {
 
                     <div className="flex items-center gap-1.5 shrink-0">
                       {/* Action Buttons: Stop / Generate / Countdown */}
-                      {streaming ? (
+                      {(streaming || isTyping) ? (
                         <button
-                          onClick={() => void stopGeneration()}
+                          onClick={() => void stopGeneration(typedText)}
                           className="flex items-center gap-1 rounded-md px-2 py-0.5 text-[9.5px] font-mono border border-danger/40 bg-danger/10 hover:bg-danger/20 text-danger hover:text-white transition-colors cursor-pointer"
                           title="Stop Answer Generation"
                         >

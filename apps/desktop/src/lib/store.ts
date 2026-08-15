@@ -95,7 +95,7 @@ interface AppStore {
   clearScreen: () => void;
   reset: () => void;
   setSpeakerPacing: (pacing: SpeakerPacing, isAutoOverride?: boolean) => Promise<void>;
-  stopGeneration: () => void;
+  stopGeneration: (currentDisplayed?: string) => void;
   isSmartWaiting: boolean;
   smartWaitConfidence: number | null;
   cancelSmartWait: () => void;
@@ -657,11 +657,6 @@ export const useStore = create<AppStore>((set, get) => ({
           set({ speculativeAnswer: null, isSpeculating: false });
           console.log("[Speculative] Interrupted by new speech. Aborting background generation.");
         }
-        if (activeAbortController) {
-          console.log("[Interrupt & Merge] Interviewer resumed speaking! Aborting active answer.");
-          activeAbortController.abort();
-          activeAbortController = null;
-        }
 
         const recentSegments = get().segments.slice(-5);
         const combinedText = recentSegments
@@ -1050,7 +1045,7 @@ export const useStore = create<AppStore>((set, get) => ({
     });
   },
 
-  stopGeneration() {
+  stopGeneration(currentDisplayed?: string) {
     if (smartWaitTimer) {
       clearTimeout(smartWaitTimer);
       smartWaitTimer = null;
@@ -1059,7 +1054,19 @@ export const useStore = create<AppStore>((set, get) => ({
       clearTimeout(suggestDebounceTimer);
       suggestDebounceTimer = null;
     }
-    set({ streaming: false, questionBuffer: [], isSmartWaiting: false, smartWaitConfidence: null });
+    
+    if (activeAbortController) {
+      activeAbortController.abort();
+      activeAbortController = null;
+    }
+
+    set((state) => {
+      const updates: any = { streaming: false, questionBuffer: [], isSmartWaiting: false, smartWaitConfidence: null };
+      if (currentDisplayed !== undefined && state.answer) {
+        updates.answer = { ...state.answer, text: currentDisplayed };
+      }
+      return updates;
+    });
   },
 
   cancelSmartWait() {
