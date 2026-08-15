@@ -492,7 +492,8 @@ export const useStore = create<AppStore>((set, get) => ({
           firstTokenMs: final.firstTokenMs != null ? Math.round(final.firstTokenMs) : null,
           createdAt: Date.now(),
         });
-        void get().analyzeInterviewTurn(prompt, final.text, get().segments.map((segment) => `${segment.speaker}: ${segment.text}`).join("\n"));
+        // Disabled to save credits as per Option A
+        // void get().analyzeInterviewTurn(prompt, final.text, get().segments.map((segment) => `${segment.speaker}: ${segment.text}`).join("\n"));
       }
     } finally {
       set({ streaming: false, attachments: [] });
@@ -1116,6 +1117,7 @@ export const useStore = create<AppStore>((set, get) => ({
       createdAt: Date.now(),
     }).catch(console.error);
 
-    void get().analyzeInterviewTurn(lastQuestion, final.text, segments.map((segment) => `${segment.speaker}: ${segment.text}`).join("\n"));
+    // Disabled to save credits as per Option A
+    // void get().analyzeInterviewTurn(lastQuestion, final.text, segments.map((segment) => `${segment.speaker}: ${segment.text}`).join("\n"));
   }
 }));
