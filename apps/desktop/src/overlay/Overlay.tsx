@@ -169,6 +169,7 @@ export function Overlay() {
   const [micLevel, setMicLevel] = useState(0);
   const [systemLevel, setSystemLevel] = useState(0);
   const inputRef = useRef<HTMLTextAreaElement>(null);
+  const scrollContainerRef = useRef<HTMLDivElement>(null);
   const startResize = (edge: "North" | "South" | "East" | "West" | "NorthEast" | "NorthWest" | "SouthEast" | "SouthWest") => {
     try {
       void (getCurrentWindow() as any).startResizing(edge);
@@ -183,6 +184,13 @@ export function Overlay() {
   const activeStreaming = streaming || isSpeculating;
   const typedText = useTypewriter(activeAnswer?.text ?? "", activeStreaming, 6);
   const isTyping = Boolean(activeAnswer?.text && typedText.length < activeAnswer.text.length);
+
+  // ---- Auto-scroll to top when new answer starts streaming -------------------
+  useEffect(() => {
+    if ((streaming || isTyping) && scrollContainerRef.current) {
+      scrollContainerRef.current.scrollTo({ top: 0, behavior: "smooth" });
+    }
+  }, [streaming, answer?.id]);
 
   // ---- hotkeys from the Rust side -------------------------------------------
   useEffect(() => {
@@ -652,7 +660,7 @@ export function Overlay() {
         {!collapsed && (
           <>
             {/* ---------- body ---------- */}
-            <div className="min-h-0 flex-1 overflow-y-auto px-3 py-2.5">
+            <div ref={scrollContainerRef} className="min-h-0 flex-1 overflow-y-auto px-3 py-2.5">
 
               {/* Live End-of-Interview Candidate Questions Banner */}
               {showEndQuestions && (
@@ -1012,16 +1020,16 @@ export function Overlay() {
                           const isGhost = isSpeculating && item.id === activeAnswer?.id;
                           
                           return (
-                            <div key={item.id} className={`animate-fade-up ${isGhost ? 'opacity-50 grayscale contrast-125' : ''}`}>
+                            <div key={item.id} className={`animate-fade-up ${isGhost ? 'opacity-40' : ''}`}>
                               {/* Question Label */}
                               <div className="mb-1.5 flex items-start gap-1.5 font-semibold text-accent text-[13px]">
                                 <Sparkles className="h-3.5 w-3.5 mt-0.5 shrink-0 text-accent" />
                                 <span>Q: {item.question || "Live Question"}</span>
                               </div>
 
-                              <div className={`leading-relaxed ${isGhost ? 'italic text-white/80' : 'text-white/90'}`}>
+                              <div className={`leading-relaxed ${isGhost ? 'italic text-white/60' : 'text-white/90'}`}>
                                 <Markdown style={{ fontSize: `${answerFontSize}px` }}>{(isCurrentStreaming || (isTyping && item.id === answer?.id)) ? typedText : (item.text || "…")}</Markdown>
-                                {(isCurrentStreaming || (isTyping && item.id === answer?.id)) && (
+                                {!isGhost && (isCurrentStreaming || (isTyping && item.id === answer?.id)) && (
                                   <span className="inline-block h-4 w-[2px] rounded-sm bg-accent align-middle ml-0.5 animate-[typewriterBlink_0.6s_ease-in-out_infinite]" />
                                 )}
                               </div>
