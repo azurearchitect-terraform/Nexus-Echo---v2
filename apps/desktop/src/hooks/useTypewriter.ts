@@ -3,14 +3,17 @@ import { useEffect, useRef, useState } from "react";
 /**
  * Smooth character-drip typewriter hook.
  *
- * Architecture: a `requestAnimationFrame` loop drains up to `speed`
- * characters per frame from a pending queue.  This avoids the jittery
- * `setTimeout` approach and gives a buttery-smooth appearance even when
- * tokens arrive in large bursts (which Gemini tends to do).
+ * Architecture: a `setInterval` loop drains up to `speed` characters per
+ * tick from a pending queue. We use setInterval instead of
+ * requestAnimationFrame because rAF is throttled/paused by WebView2
+ * (Chromium) when the window does not have focus. Since the Nexus overlay
+ * is always-on-top but almost never focused (the user is clicked into
+ * Teams/Zoom), rAF would freeze and the typewriter would stop entirely
+ * in production builds.
  *
- * Production-build fix: when streaming ends, instead of flushing all text
- * instantly, we accelerate the drain (4x speed) so the typewriter effect
- * remains visible even for cached or very fast responses.
+ * The interval runs at ~16ms (~60fps equivalent) for smooth animation.
+ * When streaming ends, the drain rate is accelerated 4x so any remaining
+ * buffer flushes quickly but still visibly.
  */
 export function useTypewriter(target: string, active: boolean, speed = 3): string {
   const [displayed, setDisplayed] = useState("");
@@ -18,7 +21,7 @@ export function useTypewriter(target: string, active: boolean, speed = 3): strin
   const prevTargetRef = useRef("");
   const activeRef = useRef(active);
 
-  // Keep activeRef in sync so the rAF loop can read it without re-mounting
+  // Keep activeRef in sync so the interval loop can read it without re-mounting
   useEffect(() => {
     activeRef.current = active;
   }, [active]);
@@ -39,14 +42,12 @@ export function useTypewriter(target: string, active: boolean, speed = 3): strin
     }
   }, [target]);
 
-  // 2. Continuous rAF loop to drain the queue independently of renders
-  //    When streaming ends (activeRef.current === false), drain at 4x speed
-  //    to preserve the typewriter effect in production builds instead of
-  //    flushing everything instantly.
+  // 2. Continuous setInterval loop to drain the queue independently of renders.
+  //    setInterval keeps ticking even when the Tauri overlay window is not
+  //    focused, unlike requestAnimationFrame which WebView2 throttles/pauses.
+  //    When streaming ends (activeRef.current === false), drain at 4x speed.
   useEffect(() => {
-    let rafId: number;
-
-    const tick = () => {
+    const intervalId = setInterval(() => {
       if (pendingRef.current) {
         // If streaming is over and very few chars remain, flush instantly
         // to avoid a lingering animation on tiny remnants.
@@ -62,15 +63,12 @@ export function useTypewriter(target: string, active: boolean, speed = 3): strin
           setDisplayed((d) => d + take);
         }
       }
-      rafId = requestAnimationFrame(tick);
-    };
+    }, 16); // ~60fps
 
-    rafId = requestAnimationFrame(tick);
-    return () => cancelAnimationFrame(rafId);
+    return () => clearInterval(intervalId);
   }, [speed]);
 
   // 3. When target resets entirely (new answer), sync displayed state.
-  //    We no longer force-flush here — the rAF loop handles draining.
   useEffect(() => {
     if (!active && target === "" && pendingRef.current === "") {
       setDisplayed("");
