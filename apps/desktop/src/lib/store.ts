@@ -120,6 +120,7 @@ let smartWaitTimer: ReturnType<typeof setTimeout> | null = null;
 let speculativeWaitTimer: ReturnType<typeof setTimeout> | null = null;
 let speculativeAbortController: AbortController | null = null;
 let activeAbortController: AbortController | null = null;
+let lastSuggestSegmentIndex = -1; // Track which segment index was last consumed by suggest()
 
 // ─── INCOMPLETE SENTENCE STARTERS ──────────────────────────────
 // These phrases typically begin multi-part scenario questions.
@@ -638,7 +639,21 @@ export const useStore = create<AppStore>((set, get) => ({
 
       // ONLY trigger live suggestions if auto-respond is enabled and the speaker is the interviewer ("system")
       if (get().settings.autoRespond !== "manual-only" && segment.source === "system") {
-        // Cancel active smart wait if one was running (interviewer is still speaking!)
+        // ── SHORT SEGMENT GUARD ──
+        // In production, speaker audio capture produces micro-segments (filler words,
+        // background noise transcribed as "um", "right", etc.). These should NOT cancel
+        // an active smartWait timer, otherwise the timer never fires and auto-send breaks.
+        const segWords = segment.text.trim().split(/\s+/).filter(Boolean);
+        const isShortFiller = segWords.length < 4 && !segment.text.trim().endsWith("?") &&
+          !QUESTION_INDICATORS.some((q) => segment.text.toLowerCase().includes(q));
+
+        if (isShortFiller && smartWaitTimer) {
+          // Short filler while already waiting — just append the segment, don't reset the timer
+          console.log(`[SmartWait] Short filler segment ignored (${segWords.length} words): "${segment.text.trim()}"`);
+          return;
+        }
+
+        // Cancel active smart wait — interviewer is speaking a substantial new segment
         if (smartWaitTimer) {
           clearTimeout(smartWaitTimer);
           smartWaitTimer = null;
@@ -659,8 +674,14 @@ export const useStore = create<AppStore>((set, get) => ({
           console.log("[Speculative] Interrupted by new speech. Aborting background generation.");
         }
 
-        const recentSegments = get().segments.slice(-5);
-        const combinedText = recentSegments
+        // ── SEGMENT WINDOW: Only combine segments SINCE the last answered question ──
+        // This prevents new questions from merging with already-answered ones.
+        const allSegments = get().segments;
+        const lastAnsweredIdx = lastSuggestSegmentIndex;
+        const freshSegments = lastAnsweredIdx >= 0
+          ? allSegments.slice(lastAnsweredIdx + 1)
+          : allSegments.slice(-5);
+        const combinedText = freshSegments
           .filter((s) => s.source === "system")
           .map((s) => s.text)
           .join(" ");
@@ -678,7 +699,7 @@ export const useStore = create<AppStore>((set, get) => ({
         // and we are in "auto" pacing mode, dynamically adjust VAD silence threshold to "slow"
         const settings = get().settings;
         if (settings.audio.speakerPacing === "auto") {
-          const systemSegments = get().segments.filter((s) => s.source === "system");
+          const systemSegments = allSegments.filter((s) => s.source === "system");
           if (systemSegments.length >= 2) {
             const last = systemSegments[systemSegments.length - 1];
             const prev = systemSegments[systemSegments.length - 2];
@@ -694,8 +715,6 @@ export const useStore = create<AppStore>((set, get) => ({
         }
 
         // ── SMART WAIT: Question Completion Detection ──
-        // Analyze the combined transcript to determine if the question is complete.
-        // Use the latest segment's confidence if available.
         const sttConfidence = segment.confidence ?? undefined;
         const completeness = analyzeQuestionCompleteness(combinedText, sttConfidence);
 
@@ -707,20 +726,20 @@ export const useStore = create<AppStore>((set, get) => ({
         else if (pacing === "auto") pacingMultiplier = 1.3;
 
         // Dynamic wait time based on completeness confidence
+        // Production-tuned: shorter waits to prevent indefinite "Waiting..." states
         let waitMs: number;
         if (completeness >= 0.85) {
-          // High confidence: question looks complete → minimal buffer
-          waitMs = Math.round(300 * pacingMultiplier);
+          waitMs = Math.round(200 * pacingMultiplier);
         } else if (completeness >= 0.60) {
-          // Moderate confidence: probably complete but give a beat
-          waitMs = Math.round(1200 * pacingMultiplier);
+          waitMs = Math.round(800 * pacingMultiplier);
         } else if (completeness >= 0.40) {
-          // Low-moderate: likely mid-sentence → longer wait
-          waitMs = Math.round(2500 * pacingMultiplier);
+          waitMs = Math.round(1500 * pacingMultiplier);
         } else {
-          // Low confidence: almost certainly incomplete → extended wait
-          waitMs = Math.round(4000 * pacingMultiplier);
+          waitMs = Math.round(2500 * pacingMultiplier);
         }
+
+        // Hard cap: never wait more than 4 seconds regardless of pacing
+        waitMs = Math.min(waitMs, 4000);
 
         console.log(
           `[SmartWait] Completeness: ${(completeness * 100).toFixed(0)}% | ` +
@@ -745,6 +764,8 @@ export const useStore = create<AppStore>((set, get) => ({
         smartWaitTimer = setTimeout(() => {
           smartWaitTimer = null;
           set({ isSmartWaiting: false, smartWaitConfidence: null });
+          // Mark which segment index was consumed so the next question doesn't merge
+          lastSuggestSegmentIndex = get().segments.length - 1;
           void get().suggest();
         }, waitMs);
       }
@@ -1005,6 +1026,7 @@ export const useStore = create<AppStore>((set, get) => ({
   },
 
   clearScreen() {
+    lastSuggestSegmentIndex = -1;
     set({ answer: null, answersList: [], attachments: [], followUps: [], questionBuffer: [], segments: [], detectedPersona: null });
   },
 
@@ -1032,6 +1054,7 @@ export const useStore = create<AppStore>((set, get) => ({
       clearTimeout(suggestDebounceTimer);
       suggestDebounceTimer = null;
     }
+    lastSuggestSegmentIndex = -1;
     set({
       answer: null,
       answersList: [],
