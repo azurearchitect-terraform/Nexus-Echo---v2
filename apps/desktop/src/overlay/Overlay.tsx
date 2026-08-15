@@ -343,7 +343,7 @@ export function Overlay() {
     return () => {
       void unlisten.then((fn) => fn());
     };
-  }, [pushSegment, settings.audio.language, listening]);
+  }, [pushSegment, settings.audio.language]);
 
   const submit = async () => {
     const prompt = input.trim();
@@ -893,8 +893,8 @@ export function Overlay() {
                           </p>
                         ) : (
                           <div className="relative group">
-                            <Markdown style={{ fontSize: `${answerFontSize}px` }}>{(streaming ? typedText : answer?.text) || "…"}</Markdown>
-                            {streaming && (
+                            <Markdown style={{ fontSize: `${answerFontSize}px` }}>{typedText || "…"}</Markdown>
+                            {(streaming || isTyping) && (
                               <span
                                 className="inline-block h-4 w-[2px] rounded-sm bg-accent align-middle ml-0.5 animate-[typewriterBlink_0.6s_ease-in-out_infinite]"
                               />
@@ -941,7 +941,7 @@ export function Overlay() {
                         ) : (
                           <div className="opacity-80 relative group">
                             <Markdown style={{ fontSize: `${answerFontSize}px` }}>
-                              {(streaming && item.id === answer?.id ? typedText : item.text) || "…"}
+                              {((streaming || isTyping) && item.id === answer?.id ? typedText : item.text) || "…"}
                             </Markdown>
                             <div className="absolute -top-2 -right-2 opacity-0 group-hover:opacity-100 transition-opacity">
                               <CopyButton text={item.text} />
@@ -1020,8 +1020,8 @@ export function Overlay() {
                               </div>
 
                               <div className={`leading-relaxed ${isGhost ? 'italic text-white/80' : 'text-white/90'}`}>
-                                <Markdown style={{ fontSize: `${answerFontSize}px` }}>{isCurrentStreaming ? typedText : (item.text || "…")}</Markdown>
-                                {isCurrentStreaming && (
+                                <Markdown style={{ fontSize: `${answerFontSize}px` }}>{(isCurrentStreaming || (isTyping && item.id === answer?.id)) ? typedText : (item.text || "…")}</Markdown>
+                                {(isCurrentStreaming || (isTyping && item.id === answer?.id)) && (
                                   <span className="inline-block h-4 w-[2px] rounded-sm bg-accent align-middle ml-0.5 animate-[typewriterBlink_0.6s_ease-in-out_infinite]" />
                                 )}
                               </div>
