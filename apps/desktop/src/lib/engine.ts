@@ -431,22 +431,45 @@ export class Engine {
 
   private async collect(system: string, user: string, maxTokens = 1200, jsonMode = false): Promise<string> {
     if (!this.settings) return "";
-    let out = "";
-    for await (const event of this.router.run({
-      system,
-      messages: [{ role: "user", content: user }],
-      policy: { ...this.settings.routing, mode: "single", firstTokenTimeoutMs: 30000 },
-      models: this.models(),
-      maxTokens,
-      jsonMode,
-    })) {
-      if (event.type === "token") {
-        out += event.delta;
-      } else if (event.type === "error") {
-        throw new Error(event.message);
+
+    const runWithProvider = async (providerOverride?: string) => {
+      let out = "";
+      const policy = { ...this.settings!.routing, mode: "single" as const, firstTokenTimeoutMs: 30000 };
+      if (providerOverride) {
+        policy.primary = providerOverride as any;
       }
+
+      for await (const event of this.router.run({
+        system,
+        messages: [{ role: "user", content: user }],
+        policy,
+        models: this.models(),
+        maxTokens,
+        jsonMode,
+      })) {
+        if (event.type === "token") {
+          out += event.delta;
+        } else if (event.type === "error") {
+          throw new Error(event.message);
+        }
+      }
+      return out;
+    };
+
+    try {
+      return await runWithProvider();
+    } catch (e: any) {
+      // If primary fails (e.g., 429 out of credits) and we have a secondary configured, fallback sequentially
+      if (this.settings.routing.secondary && this.settings.routing.secondary !== this.settings.routing.primary) {
+        console.warn(`Primary provider ${this.settings.routing.primary} failed for background task, falling back to ${this.settings.routing.secondary}:`, e.message);
+        try {
+          return await runWithProvider(this.settings.routing.secondary);
+        } catch (fallbackErr) {
+          throw e; // Throw the original primary error if fallback also fails
+        }
+      }
+      throw e;
     }
-    return out;
   }
 
   async summarizeMeeting(segments: TranscriptSegment[]): Promise<MeetingSummary> {
