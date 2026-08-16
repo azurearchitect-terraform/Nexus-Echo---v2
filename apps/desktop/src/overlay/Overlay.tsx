@@ -1316,8 +1316,7 @@ export function Overlay() {
                       )}
 
                       <span className="ml-1 hidden sm:flex items-center gap-1 text-[9px] text-white/25 shrink-0">
-                        <Command className="h-2 w-2" />
-                        <span className="kbd">⌘⇧↵</span>
+                        <span className="kbd">Right Ctrl</span>
                       </span>
                     </div>
                   </div>

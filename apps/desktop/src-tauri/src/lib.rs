@@ -34,7 +34,7 @@ const HOTKEYS: &[(&str, Modifiers, Code)] = &[
     ("listen", PRIMARY_MOD.union(Modifiers::SHIFT), Code::KeyL),
     ("capture", PRIMARY_MOD.union(Modifiers::SHIFT), Code::KeyS),
     ("region", PRIMARY_MOD.union(Modifiers::SHIFT).union(Modifiers::ALT), Code::KeyS),
-    ("suggest", PRIMARY_MOD.union(Modifiers::SHIFT), Code::Enter),
+    ("suggest", Modifiers::empty(), Code::ControlRight),
     ("panic", PRIMARY_MOD.union(Modifiers::SHIFT), Code::Backslash),
     ("move_up", PRIMARY_MOD, Code::ArrowUp),
     ("move_down", PRIMARY_MOD, Code::ArrowDown),
