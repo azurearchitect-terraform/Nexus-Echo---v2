@@ -670,8 +670,10 @@ export const useStore = create<AppStore>((set, get) => ({
         if (speculativeAbortController) {
           speculativeAbortController.abort();
           speculativeAbortController = null;
-          set({ speculativeAnswer: null, isSpeculating: false });
-          console.log("[Speculative] Interrupted by new speech. Aborting background generation.");
+        }
+        if (get().isSpeculating) {
+          set({ speculativeAnswer: null, isSpeculating: false, isSpeculationComplete: false });
+          console.log("[Speculative] Interrupted by new speech. Resetting background generation.");
         }
 
         // ── SEGMENT WINDOW: Only combine segments SINCE the last answered question ──
@@ -920,26 +922,41 @@ export const useStore = create<AppStore>((set, get) => ({
     const recent = segments.slice(-3);
     const lastQuestion = recent.map((s) => s.text.trim()).filter(Boolean).join(" ") || "Live Question";
 
-    if (get().streaming && !isSpeculative) {
+    if (!isSpeculative) {
       if (get().isSpeculating) {
         console.log("[Speculative] Promoting background answer to foreground!");
         const isComplete = get().isSpeculationComplete;
         const ans = get().speculativeAnswer;
 
-        set({ isSpeculating: false, isSpeculationComplete: false, answer: ans, streaming: !isComplete });
+        set({
+          isSpeculating: false,
+          isSpeculationComplete: false,
+          speculativeAnswer: null,
+          answer: ans,
+          streaming: !isComplete
+        });
 
-        if (isComplete && ans?.text) {
-          get().finalizeAnswer(ans, lastQuestion, segments);
-          const nextTask = get().questionBuffer[0];
-          if (nextTask) {
-            set((s) => ({ questionBuffer: s.questionBuffer.slice(1) }));
-            if (nextTask.kind === "suggest") void get().suggest();
+        if (ans) {
+          if (isComplete && ans.text) {
+            get().finalizeAnswer(ans, lastQuestion, segments);
+            const nextTask = get().questionBuffer[0];
+            if (nextTask) {
+              set((s) => ({ questionBuffer: s.questionBuffer.slice(1) }));
+              if (nextTask.kind === "suggest") void get().suggest();
+            }
+          } else {
+            // Transfer speculative abort controller to active abort controller
+            activeAbortController = speculativeAbortController;
+            speculativeAbortController = null;
           }
         }
         return;
       }
-      set((s) => ({ questionBuffer: [...s.questionBuffer, { kind: "suggest" }] }));
-      return;
+
+      if (get().streaming) {
+        set((s) => ({ questionBuffer: [...s.questionBuffer, { kind: "suggest" }] }));
+        return;
+      }
     }
     
     if (get().streaming && isSpeculative) return;
@@ -970,6 +987,9 @@ export const useStore = create<AppStore>((set, get) => ({
       abortController = activeAbortController;
       set({
         streaming: true,
+        isSpeculating: false,
+        isSpeculationComplete: false,
+        speculativeAnswer: null,
         answer: { id: answerId, question: lastQuestion || undefined, persona, text: "", citations: [] },
       });
     }

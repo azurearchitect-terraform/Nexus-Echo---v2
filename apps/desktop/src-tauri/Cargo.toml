@@ -1,6 +1,6 @@
 [package]
 name = "nexus-echo"
-version = "2.1.0"
+version = "2.1.1"
 description = "Nexus Echo AI - private, stealth AI meeting assistant"
 authors = ["Nexus Echo"]
 edition = "2021"
