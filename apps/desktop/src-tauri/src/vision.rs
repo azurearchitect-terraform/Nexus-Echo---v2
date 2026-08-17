@@ -53,10 +53,14 @@ pub fn capture(app: &AppHandle, region: Option<CaptureRegion>) -> Result<Screens
 
 fn capture_inner(region: Option<CaptureRegion>) -> Result<Screenshot> {
     let monitors = xcap::Monitor::all().map_err(|e| anyhow!("monitor enumeration failed: {e}"))?;
-    let monitor = monitors
-        .into_iter()
-        .find(|m| m.is_primary())
-        .ok_or_else(|| anyhow!("no primary monitor"))?;
+    let mut primary_monitor = None;
+    for monitor in monitors {
+        if monitor.is_primary().map_err(|e| anyhow!("failed to inspect monitor: {e}"))? {
+            primary_monitor = Some(monitor);
+            break;
+        }
+    }
+    let monitor = primary_monitor.ok_or_else(|| anyhow!("no primary monitor"))?;
 
     let mut image = monitor.capture_image().map_err(|e| anyhow!("capture failed: {e}"))?;
 

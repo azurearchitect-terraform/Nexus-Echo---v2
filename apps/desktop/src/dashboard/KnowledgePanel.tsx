@@ -74,7 +74,6 @@ export function KnowledgePanel() {
           for (let i = 1; i <= pdf.numPages; i++) {
             const page = await pdf.getPage(i);
             const content = await page.getTextContent();
-            // eslint-disable-next-line @typescript-eslint/no-explicit-any
             const pageText = content.items.map((item: any) => item.str).join(" ");
             pages.push(pageText);
           }

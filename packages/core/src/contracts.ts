@@ -60,7 +60,7 @@ export const StealthConfig = z.object({
   alwaysOnTop: z.boolean().default(true),
   /** Overlay opacity, 0.15..1.0 */
   opacity: z.number().min(0.15).max(1).default(0.92),
-  /** Click-through: mouse events pass to the window below except on controls. */
+  /** Click-through: the OS sends all mouse events to the window below. */
   clickThrough: z.boolean().default(false),
   /** Instantly blank the overlay on this hotkey. */
   panicHotkey: z.string().default("CommandOrControl+Shift+Backslash"),
@@ -173,6 +173,8 @@ export const AppSettings = z.object({
   systemPrompt: z.string().default(""),
   targetCompany: z.string().default(""),
   targetJd: z.string().default(""),
+  targetRole: z.string().max(120).default("Senior Azure Architect"),
+  experienceYears: z.number().int().min(0).max(60).default(16),
   answerFormat: z.enum(["stara", "concise", "detailed"]).default("stara"),
   interviewMode: InterviewMode.default("mixed"),
   accentColor: z.string().default("#6ee7b7"),

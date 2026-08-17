@@ -160,6 +160,10 @@ impl CaptureSession {
         self.started_at.elapsed().as_millis() as u64
     }
 
+    pub fn is_empty(&self) -> bool {
+        self.streams.lock().is_empty()
+    }
+
     pub fn stop(&self) {
         self.running.store(false, Ordering::SeqCst);
         self.streams.lock().clear();

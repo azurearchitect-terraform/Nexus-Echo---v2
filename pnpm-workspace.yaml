@@ -2,3 +2,6 @@ packages:
   - "apps/*"
   - "packages/*"
   - "plugins/*"
+
+overrides:
+  nanoid: 3.3.18

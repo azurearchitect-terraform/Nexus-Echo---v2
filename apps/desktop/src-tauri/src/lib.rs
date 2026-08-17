@@ -14,6 +14,57 @@ use tauri::tray::TrayIconBuilder;
 use tauri::{Emitter, Manager};
 use tauri_plugin_global_shortcut::{Code, Modifiers, Shortcut, ShortcutState};
 
+/// Windows-only: low-level keyboard hook so Right Ctrl registers as the "suggest"
+/// trigger without relying on RegisterHotKey, which does not accept bare modifier VKs.
+#[cfg(target_os = "windows")]
+mod rctrl_hook {
+    use std::sync::OnceLock;
+    use std::sync::atomic::Ordering;
+    use tauri::{AppHandle, Emitter, Manager};
+    use windows::Win32::Foundation::{LPARAM, LRESULT, WPARAM};
+    use windows::Win32::UI::Input::KeyboardAndMouse::VK_RCONTROL;
+    use windows::Win32::UI::WindowsAndMessaging::{
+        CallNextHookEx, GetMessageW, SetWindowsHookExW,
+        HHOOK, KBDLLHOOKSTRUCT, MSG, WH_KEYBOARD_LL, WM_KEYDOWN, WM_SYSKEYDOWN,
+    };
+
+    static HANDLE: OnceLock<AppHandle> = OnceLock::new();
+
+    unsafe extern "system" fn proc(ncode: i32, wparam: WPARAM, lparam: LPARAM) -> LRESULT {
+        if ncode >= 0 {
+            let info = &*(lparam.0 as *const KBDLLHOOKSTRUCT);
+            let msg = wparam.0 as u32;
+            if (msg == WM_KEYDOWN || msg == WM_SYSKEYDOWN)
+                && info.vkCode == u32::from(VK_RCONTROL.0)
+            {
+                if let Some(app) = HANDLE.get() {
+                    let state = app.state::<crate::AppState>();
+                    if state.shortcuts_enabled.load(Ordering::SeqCst) {
+                        if let Some(ov) = app.get_webview_window("overlay") {
+                            let _ = ov.show();
+                        }
+                        let _ = app.emit("nexus://hotkey", "suggest");
+                    }
+                }
+            }
+        }
+        CallNextHookEx(HHOOK(std::ptr::null_mut()), ncode, wparam, lparam)
+    }
+
+    pub fn install(app: AppHandle) {
+        let _ = HANDLE.set(app);
+        std::thread::spawn(|| unsafe {
+            match SetWindowsHookExW(WH_KEYBOARD_LL, Some(proc), None, 0) {
+                Ok(_hook) => {
+                    let mut msg = MSG::default();
+                    while GetMessageW(&mut msg, None, 0, 0).as_bool() {}
+                }
+                Err(e) => tracing::warn!("Right Ctrl hook could not be installed: {e}"),
+            }
+        });
+    }
+}
+
 pub struct AppState {
     pub db: db::Db,
     pub db_path: Mutex<String>,
@@ -21,6 +72,7 @@ pub struct AppState {
     pub capture: Mutex<Option<audio::CaptureSession>>,
     pub active_meeting: Mutex<Option<String>>,
     pub shortcuts_enabled: AtomicBool,
+    pub overlay_interactive: AtomicBool,
 }
 
 #[cfg(target_os = "macos")]
@@ -42,6 +94,7 @@ const HOTKEYS: &[(&str, Modifiers, Code)] = &[
     ("move_right", PRIMARY_MOD, Code::ArrowRight),
     ("quit_app", PRIMARY_MOD.union(Modifiers::SHIFT), Code::KeyQ),
     ("toggle_dashboard", PRIMARY_MOD.union(Modifiers::SHIFT), Code::KeyD),
+    ("resize_mode", PRIMARY_MOD.union(Modifiers::SHIFT), Code::KeyR),
 ];
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
@@ -72,6 +125,7 @@ pub fn run() {
                 capture: Mutex::new(None),
                 active_meeting: Mutex::new(None),
                 shortcuts_enabled: AtomicBool::new(true),
+                overlay_interactive: AtomicBool::new(true),
             });
 
             let cfg = stealth::StealthConfig::default();
@@ -84,6 +138,8 @@ pub fn run() {
             }
 
             register_hotkeys(app.handle())?;
+            #[cfg(target_os = "windows")]
+            rctrl_hook::install(app.handle().clone());
             build_tray(app.handle(), cfg.hide_from_taskbar)?;
             event_logger::log_event(1001, event_logger::LogLevel::Info, "Nexus Echo application launched successfully.");
             Ok(())
@@ -92,10 +148,12 @@ pub fn run() {
             commands::apply_stealth,
             commands::toggle_overlay,
             commands::resize_overlay,
+            commands::resize_overlay_size,
             commands::move_overlay,
             commands::panic_hide,
             commands::focus_overlay,
             commands::set_click_through,
+            commands::toggle_resize_mode,
             commands::open_dashboard,
             commands::list_audio_devices,
             commands::start_listening,
@@ -168,6 +226,11 @@ fn register_hotkeys(app: &tauri::AppHandle) -> tauri::Result<()> {
                             let _ = dash.show();
                             let _ = dash.set_focus();
                         }
+                    }
+                }
+                "resize_mode" => {
+                    if let Ok(interactive) = crate::commands::toggle_resize_mode_inner(&handle_primary, &state) {
+                        let _ = handle_primary.emit("nexus://resize-mode", interactive);
                     }
                 }
                 "quit_app" => {

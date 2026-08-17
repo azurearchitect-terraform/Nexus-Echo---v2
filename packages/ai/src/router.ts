@@ -270,46 +270,68 @@ export class HybridRouter {
     }
   }
 
-  /** Fast answer now, deep answer swapped in when it is ready. */
+  /** Use the configured secondary as the answer model, with primary as a safe fallback. */
   private async *runTiered(
     requestId: string,
     started: number,
     ids: ProviderId[],
     input: RouterInput,
   ): AsyncGenerator<StreamEvent> {
-    // Hybrid Tier strategy: Gemini listens (STT), OpenAI (gpt-4o-mini) writes the response directly.
-    // To be 100% cost-sensitive without double-charging, we stream directly from the target OpenAI provider
-    // (or fallback to fast provider if deep is not configured).
-    const [fastId, deepId] = ids as [ProviderId, ProviderId];
-    const targetId = (deepId && this.providers.get(deepId)) ? deepId : fastId;
-    const provider = this.providers.get(targetId);
-    if (!provider) return;
+    if (input.signal?.aborted) return;
 
-    const ctl = new AbortController();
-    const opts = this.buildOptions(targetId, input, "deep", ctl.signal);
+    const available = new Set(ids);
+    const targets = [...new Set([input.policy.secondary, input.policy.primary])]
+      .filter((id) => available.has(id) && this.providers.has(id));
+    let lastError = "No tier provider is available.";
 
-    let firstTokenMs = 0;
-    yield { type: "start", requestId, provider: targetId, model: opts.model };
-    try {
-      for await (const chunk of provider.stream(opts)) {
-        if (chunk.done) break;
-        if (!chunk.delta) continue;
+    for (const targetId of targets) {
+      const provider = this.providers.get(targetId);
+      if (!provider) continue;
+
+      const ctl = new AbortController();
+      const abortFromCaller = () => ctl.abort();
+      input.signal?.addEventListener("abort", abortFromCaller, { once: true });
+      const opts = this.buildOptions(targetId, input, "deep", ctl.signal);
+      let firstTokenMs = 0;
+      let timedOut = false;
+      const timeout = setTimeout(() => {
         if (!firstTokenMs) {
-          firstTokenMs = performance.now() - started;
-          this.note(targetId, firstTokenMs);
+          timedOut = true;
+          ctl.abort();
         }
-        yield { type: "token", requestId, delta: chunk.delta };
+      }, input.policy.firstTokenTimeoutMs);
+
+      yield { type: "start", requestId, provider: targetId, model: opts.model };
+      try {
+        for await (const chunk of provider.stream(opts)) {
+          if (chunk.done) break;
+          if (!chunk.delta) continue;
+          if (!firstTokenMs) {
+            firstTokenMs = performance.now() - started;
+            this.note(targetId, firstTokenMs);
+          }
+          yield { type: "token", requestId, delta: chunk.delta };
+        }
+
+        if (firstTokenMs) {
+          yield { type: "done", requestId, latencyMs: performance.now() - started, firstTokenMs };
+          return;
+        }
+        lastError = `${targetId} returned an empty response.`;
+        this.penalize(targetId);
+      } catch (err) {
+        if (input.signal?.aborted) return;
+        this.penalize(targetId);
+        lastError = timedOut
+          ? `No provider returned a token within ${input.policy.firstTokenTimeoutMs}ms.`
+          : err instanceof Error ? err.message : String(err);
+      } finally {
+        clearTimeout(timeout);
+        input.signal?.removeEventListener("abort", abortFromCaller);
       }
-    } catch (err) {
-      this.penalize(targetId);
-      yield {
-        type: "error",
-        requestId,
-        message: err instanceof Error ? err.message : String(err),
-        recoverable: true,
-      };
     }
 
-    yield { type: "done", requestId, latencyMs: performance.now() - started, firstTokenMs };
+    yield { type: "error", requestId, message: lastError, recoverable: true };
+    yield { type: "done", requestId, latencyMs: performance.now() - started, firstTokenMs: 0 };
   }
 }

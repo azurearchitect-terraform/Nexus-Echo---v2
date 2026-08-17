@@ -34,6 +34,7 @@ pub fn apply_stealth(
         .get_webview_window("overlay")
         .ok_or_else(|| "overlay window is not available".to_string())?;
     stealth::apply(&window, &payload).map_err(err)?;
+    state.overlay_interactive.store(!payload.click_through, Ordering::SeqCst);
     *state.stealth.lock() = payload;
     event_logger::log_event(1004, event_logger::LogLevel::Info, "Stealth and window display affinity rules applied.");
     Ok(stealth::verify(&window))
@@ -67,6 +68,18 @@ pub fn resize_overlay(app: AppHandle, height: u32) -> CmdResult<()> {
 }
 
 #[tauri::command]
+pub fn resize_overlay_size(app: AppHandle, width: u32, height: u32) -> CmdResult<()> {
+    let window = app
+        .get_webview_window("overlay")
+        .ok_or_else(|| "overlay window is not available".to_string())?;
+    let mut size = window.outer_size().map_err(err)?;
+    size.width = width;
+    size.height = height;
+    window.set_size(size).map_err(err)?;
+    Ok(())
+}
+
+#[tauri::command]
 pub fn move_overlay(app: AppHandle, dx: i32, dy: i32) -> CmdResult<()> {
     let window = app
         .get_webview_window("overlay")
@@ -94,11 +107,27 @@ pub fn focus_overlay(app: AppHandle) -> CmdResult<()> {
 }
 
 #[tauri::command]
-pub fn set_click_through(app: AppHandle, payload: bool) -> CmdResult<()> {
+pub fn set_click_through(app: AppHandle, payload: bool, state: State<'_, AppState>) -> CmdResult<()> {
     app.get_webview_window("overlay")
         .ok_or_else(|| "overlay window is not available".to_string())?
         .set_ignore_cursor_events(payload)
-        .map_err(err)
+        .map_err(err)?;
+    state.overlay_interactive.store(!payload, Ordering::SeqCst);
+    Ok(())
+}
+
+pub fn toggle_resize_mode_inner(app: &AppHandle, state: &AppState) -> CmdResult<bool> {
+    let interactive = !state.overlay_interactive.fetch_xor(true, Ordering::SeqCst);
+    app.get_webview_window("overlay")
+        .ok_or_else(|| "overlay window is not available".to_string())?
+        .set_ignore_cursor_events(!interactive)
+        .map_err(err)?;
+    Ok(interactive)
+}
+
+#[tauri::command]
+pub fn toggle_resize_mode(app: AppHandle, state: State<'_, AppState>) -> CmdResult<bool> {
+    toggle_resize_mode_inner(&app, &state)
 }
 
 #[tauri::command]
@@ -138,11 +167,12 @@ pub fn start_listening(
     if payload.vad_threshold < 0.0 || payload.vad_threshold > 1.0 {
         return Err("vadThreshold must be between 0 and 1".into());
     }
+    if !payload.capture_microphone && !payload.capture_system_audio {
+        return Err("at least one audio source must be enabled".into());
+    }
     if let Some(prev) = state.capture.lock().take() {
         prev.stop();
     }
-
-    state.db.create_meeting(&payload.meeting_id, "Untitled meeting").map_err(err)?;
 
     let (running, epoch, session) = audio::new_session();
 
@@ -177,6 +207,12 @@ pub fn start_listening(
         }
     }
 
+    if session.is_empty() {
+        session.stop();
+        return Err("no requested audio source could be started".into());
+    }
+
+    state.db.create_meeting(&payload.meeting_id, "Untitled meeting").map_err(err)?;
     *state.active_meeting.lock() = Some(payload.meeting_id.clone());
     *state.capture.lock() = Some(session);
     event_logger::log_event(1002, event_logger::LogLevel::Info, &format!("Audio listening capture session started. Meeting ID: {}", payload.meeting_id));

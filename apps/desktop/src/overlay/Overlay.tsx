@@ -2,10 +2,11 @@ import { useEffect, useRef, useState } from "react";
 import { useTypewriter } from "@/hooks/useTypewriter";
 import { listen } from "@tauri-apps/api/event";
 import { getCurrentWindow } from "@tauri-apps/api/window";
+
+type ResizeDirection = "East" | "North" | "NorthEast" | "NorthWest" | "South" | "SouthEast" | "SouthWest" | "West";
 import {
   Camera,
   Check,
-  Command,
   Copy,
   Ear,
   Eraser,
@@ -29,12 +30,12 @@ import {
   Zap,
   Briefcase,
   ShieldCheck,
-  Building2,
   Trash2,
   HelpCircle,
   Clock,
   ShieldAlert,
   Lightbulb,
+  Scaling,
 } from "lucide-react";
 
 function isTrapQuestion(text?: string): boolean {
@@ -78,11 +79,9 @@ import type { RoutingMode } from "@nexus/core";
 import { useStore } from "@/lib/store";
 import { bridge } from "@/lib/bridge";
 import { Markdown } from "@/components/Markdown";
-import { StatusDot } from "@/components/StatusDot";
-import { Waveform } from "@/components/Waveform";
 import { Transcript } from "@/components/Transcript";
 import { cn } from "@/lib/cn";
-import { uid, formatMs, looksLikeQuestion, type TranscriptSegment } from "@nexus/core";
+import { uid, formatMs, type TranscriptSegment } from "@nexus/core";
 
 /**
  * Overlay layout rationale
@@ -140,7 +139,6 @@ export function Overlay() {
     pushSegment,
     setSpeaking,
     suggest,
-    followUps,
     settings,
     saveSettings,
     attachments,
@@ -160,7 +158,6 @@ export function Overlay() {
   const [input, setInput] = useState("");
   const [useScreen, setUseScreen] = useState(false);
   const [collapsed, setCollapsed] = useState(false);
-  const [copied, setCopied] = useState(false);
   const [liveQuestion, setLiveQuestion] = useState<string | null>(null);
   const [endQnATab, setEndQnATab] = useState<"Technical" | "HR">("Technical");
   const [answerFontSize, setAnswerFontSize] = useState<number>(14);
@@ -168,11 +165,12 @@ export function Overlay() {
   const [sttErrorMessage, setSttErrorMessage] = useState<string | null>(null);
   const [micLevel, setMicLevel] = useState(0);
   const [systemLevel, setSystemLevel] = useState(0);
+  const [resizeModeActive, setResizeModeActive] = useState(!settings.stealth.clickThrough);
   const inputRef = useRef<HTMLTextAreaElement>(null);
   const scrollContainerRef = useRef<HTMLDivElement>(null);
-  const startResize = (edge: "North" | "South" | "East" | "West" | "NorthEast" | "NorthWest" | "SouthEast" | "SouthWest") => {
+  const startResize = async (direction: ResizeDirection) => {
     try {
-      void (getCurrentWindow() as any).startResizing(edge);
+      await getCurrentWindow().startResizeDragging(direction);
     } catch (e) {
       console.error("failed to start resizing", e);
     }
@@ -220,12 +218,31 @@ export function Overlay() {
     };
   }, [listening, setMode, startListening, stopListening, suggest]);
 
+  useEffect(() => {
+    const unlisten = listen<boolean>("nexus://resize-mode", (event) => {
+      setResizeModeActive(event.payload);
+    });
+    return () => {
+      void unlisten.then((fn) => fn());
+    };
+  }, []);
+
   // ---- Auto-start listening when entering Listen mode -----------------------
+  // Also re-fires when audio sources are toggled so a prior failure auto-retries.
   useEffect(() => {
     if (mode === "listen" && !listening && ready) {
-      void startListening();
+      startListening().catch((err: Error) => {
+        setSttStatus("error");
+        const msg = err?.message ?? String(err);
+        setSttErrorMessage(
+          msg.includes("no requested audio source") || msg.includes("at least one")
+            ? "No audio source active. Enable Microphone (🎤) or System Audio in the toolbar, then the session will restart automatically."
+            : `Audio capture failed: ${msg}`,
+        );
+      });
     }
-  }, [mode, listening, ready, startListening]);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [mode, listening, ready, startListening, settings.audio.captureMicrophone, settings.audio.captureSystemAudio]);
 
   // ---- Auto-expand window height when answer arrives/streams -----------------
   useEffect(() => {
@@ -366,13 +383,6 @@ export function Overlay() {
     addAttachment({ id: uid("shot"), kind: "screenshot", path: shot.dataUrl, mimeType: "image/png" });
   };
 
-  const copyAnswer = async () => {
-    if (!answer?.text) return;
-    await navigator.clipboard.writeText(answer.text);
-    setCopied(true);
-    setTimeout(() => setCopied(false), 2000);
-  };
-
   const showEndQuestions = endInterviewQuestions && endInterviewQuestions.length > 0;
 
   useEffect(() => {
@@ -421,33 +431,38 @@ export function Overlay() {
 
   return (
     <div className="flex h-screen flex-col p-2 relative">
-      {/* Outer Resize Frame (Uses the 8px p-2 padding space) */}
+      {/* Large hit zones overlap the visible panel, so resizing never requires targeting the rear frame. */}
       <div
-        onMouseDown={() => startResize("North")}
-        className="no-drag absolute top-0 left-2 right-2 h-2 cursor-n-resize bg-white/10 hover:bg-accent/60 transition-colors rounded-t-md z-50"
+        onMouseDown={(e) => { e.preventDefault(); e.stopPropagation(); void startResize("North"); }}
+        className="no-drag group absolute inset-x-4 top-0 z-[80] h-3 cursor-n-resize"
         title="Drag top edge to resize"
-      />
+      ><span className="pointer-events-none absolute inset-x-0 top-0 h-0.5 bg-transparent transition-colors group-hover:bg-accent/80" /></div>
       <div
-        onMouseDown={() => startResize("South")}
-        className="no-drag absolute bottom-0 left-2 right-2 h-2 cursor-s-resize bg-white/10 hover:bg-accent/60 transition-colors rounded-b-md z-50"
+        onMouseDown={(e) => { e.preventDefault(); e.stopPropagation(); void startResize("South"); }}
+        className="no-drag group absolute inset-x-4 bottom-0 z-[80] h-3 cursor-s-resize"
         title="Drag bottom edge to resize"
-      />
+      ><span className="pointer-events-none absolute inset-x-0 bottom-0 h-0.5 bg-transparent transition-colors group-hover:bg-accent/80" /></div>
       <div
-        onMouseDown={() => startResize("West")}
-        className="no-drag absolute top-0 bottom-0 left-0 w-2 cursor-w-resize bg-white/10 hover:bg-accent/60 transition-colors rounded-l-md z-50"
+        onMouseDown={(e) => { e.preventDefault(); e.stopPropagation(); void startResize("West"); }}
+        className="no-drag group absolute inset-y-4 left-0 z-[80] w-3 cursor-w-resize"
         title="Drag left edge to resize"
-      />
+      ><span className="pointer-events-none absolute inset-y-0 left-0 w-0.5 bg-transparent transition-colors group-hover:bg-accent/80" /></div>
       <div
-        onMouseDown={() => startResize("East")}
-        className="no-drag absolute top-0 bottom-0 right-0 w-2 cursor-e-resize bg-white/10 hover:bg-accent/60 transition-colors rounded-r-md z-50"
+        onMouseDown={(e) => { e.preventDefault(); e.stopPropagation(); void startResize("East"); }}
+        className="no-drag group absolute inset-y-4 right-0 z-[80] w-3 cursor-e-resize"
         title="Drag right edge to resize"
-      />
+      ><span className="pointer-events-none absolute inset-y-0 right-0 w-0.5 bg-transparent transition-colors group-hover:bg-accent/80" /></div>
 
-      {/* Corners for easy diagonal resize */}
-      <div onMouseDown={() => startResize("NorthWest")} className="no-drag absolute top-0 left-0 w-3 h-3 cursor-nw-resize z-[60]" />
-      <div onMouseDown={() => startResize("NorthEast")} className="no-drag absolute top-0 right-0 w-3 h-3 cursor-ne-resize z-[60]" />
-      <div onMouseDown={() => startResize("SouthWest")} className="no-drag absolute bottom-0 left-0 w-3 h-3 cursor-sw-resize z-[60]" />
-      <div onMouseDown={() => startResize("SouthEast")} className="no-drag absolute bottom-0 right-0 w-3 h-3 cursor-se-resize z-[60]" />
+      <div onMouseDown={(e) => { e.preventDefault(); e.stopPropagation(); void startResize("NorthWest"); }} className="no-drag absolute left-0 top-0 z-[90] h-4 w-4 cursor-nw-resize" />
+      <div onMouseDown={(e) => { e.preventDefault(); e.stopPropagation(); void startResize("NorthEast"); }} className="no-drag absolute right-0 top-0 z-[90] h-4 w-4 cursor-ne-resize" />
+      <div onMouseDown={(e) => { e.preventDefault(); e.stopPropagation(); void startResize("SouthWest"); }} className="no-drag absolute bottom-0 left-0 z-[90] h-4 w-4 cursor-sw-resize" />
+      <div onMouseDown={(e) => { e.preventDefault(); e.stopPropagation(); void startResize("SouthEast"); }} className="no-drag absolute bottom-0 right-0 z-[90] h-4 w-4 cursor-se-resize" />
+
+      {!resizeModeActive && (
+        <div className="pointer-events-none absolute right-3 top-3 z-[100] rounded-md border border-amber-400/30 bg-black/80 px-2 py-1 text-[10px] text-amber-300">
+          Click-through on · Ctrl+Shift+R to resize
+        </div>
+      )}
 
       {!ready && (
         <div className="absolute left-4 top-4 z-50 rounded-full border border-white/10 bg-black/60 px-2.5 py-1 text-[10px] uppercase tracking-[0.2em] text-white/40 backdrop-blur">
@@ -521,7 +536,12 @@ export function Overlay() {
                   await saveSettings(newSettings);
                   if (listening) {
                     await stopListening();
-                    await startListening();
+                  }
+                  if (mode === "listen") {
+                    await startListening().catch((err: Error) => {
+                      setSttStatus("error");
+                      setSttErrorMessage(`Audio capture failed: ${err?.message ?? err}`);
+                    });
                   }
                 }}
                 className={`flex items-center gap-1.5 rounded-md px-1.5 py-1 text-[11px] transition-colors ${
@@ -546,7 +566,12 @@ export function Overlay() {
                   await saveSettings(newSettings);
                   if (listening) {
                     await stopListening();
-                    await startListening();
+                  }
+                  if (mode === "listen") {
+                    await startListening().catch((err: Error) => {
+                      setSttStatus("error");
+                      setSttErrorMessage(`Audio capture failed: ${err?.message ?? err}`);
+                    });
                   }
                 }}
                 className={`flex items-center gap-1.5 rounded-md px-1.5 py-1 text-[11px] transition-colors ${
@@ -624,6 +649,13 @@ export function Overlay() {
           </div>
 
           <div data-tauri-drag-region="false" className="flex items-center gap-0.5 no-drag">
+            <button
+              className="btn-ghost cursor-nwse-resize"
+              onMouseDown={(e) => { e.preventDefault(); e.stopPropagation(); void startResize("SouthEast"); }}
+              title="Drag to resize window (Ctrl+Shift+R toggles click-through)"
+            >
+              <Scaling className="h-3.5 w-3.5" />
+            </button>
             <button
               className="btn-ghost"
               onClick={() => setAnswerFontSize(Math.max(10, answerFontSize - 2))}
@@ -917,7 +949,7 @@ export function Overlay() {
                       </div>
                     )}
 
-                    {[...answersList].reverse().map((item, idx) => (
+                    {[...answersList].reverse().map((item) => (
                       <div key={item.id} className="animate-fade-up pb-4 border-b border-white/5 last:border-0">
                         {item.question && (
                           <div className="mb-2 flex items-start justify-between text-[14px] font-medium text-white/80">
@@ -1015,7 +1047,7 @@ export function Overlay() {
 
                     return (
                       <div className="mt-3 pt-2 border-t border-white/10 space-y-4">
-                        {activeAnswerList.map((item, idx) => {
+                        {activeAnswerList.map((item) => {
                           const isCurrentStreaming = activeStreaming && item.id === activeAnswer?.id;
                           const isGhost = isSpeculating && item.id === activeAnswer?.id;
                           
@@ -1446,12 +1478,10 @@ export function Overlay() {
 
                   {/* Corner Drag Handle for Super Easy Window Resizing */}
                   <div
-                    onMouseDown={() => {
-                      try {
-                        startResize("SouthEast");
-                      } catch (e) {
-                        console.error("failed to start resizing", e);
-                      }
+                    onMouseDown={(e) => {
+                      e.preventDefault();
+                      e.stopPropagation();
+                      void startResize("SouthEast");
                     }}
                     className="no-drag cursor-nwse-resize p-1 text-accent hover:text-white transition-colors flex items-center justify-center font-bold text-[13px] rounded bg-accent/15 border border-accent/30 hover:bg-accent/30 ml-1"
                     title="Click & Drag Corner to Resize Window Easily"

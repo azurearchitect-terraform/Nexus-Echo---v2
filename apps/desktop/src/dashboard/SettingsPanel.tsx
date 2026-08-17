@@ -14,8 +14,8 @@ const ROUTING_COPY: Record<RoutingMode, { title: string; body: string }> = {
     body: "Fires Gemini and OpenAI at the same moment and streams whichever answers first. The loser is cancelled after a few tokens, so you pay for roughly one and a bit completions and get the lower of the two latencies every time. This is the fastest setting.",
   },
   "hybrid-tier": {
-    title: "Hybrid — instant then refine",
-    body: "The fast model answers in about 300ms so you always have something to say. The stronger model works in the background and quietly replaces the answer when it lands. Best when the questions are hard and the room gives you a beat.",
+    title: "Hybrid — transcribe then answer",
+    body: "The Speech-to-Text engine transcribes the interview audio, then the configured answer provider writes the response. With the defaults, Gemini listens and OpenAI answers. The answer fallback is used only if OpenAI fails before producing content.",
   },
   single: {
     title: "Single provider",
@@ -108,7 +108,7 @@ export function SettingsPanel() {
       {settings.routing.mode.startsWith("hybrid") && (
         <div className="grid grid-cols-2 gap-3">
           <Select
-            label="Fast side"
+            label={settings.routing.mode === "hybrid-tier" ? "Answer fallback" : "Race primary"}
             value={settings.routing.primary}
             options={["gemini", "openai", "ollama"]}
             onChange={(primary) =>
@@ -116,7 +116,7 @@ export function SettingsPanel() {
             }
           />
           <Select
-            label="Deep side"
+            label={settings.routing.mode === "hybrid-tier" ? "Answer provider" : "Race secondary"}
             value={settings.routing.secondary}
             options={["openai", "gemini", "ollama"]}
             onChange={(secondary) =>
@@ -131,7 +131,7 @@ export function SettingsPanel() {
 
       <Slider
         label="First-token timeout"
-        hint="How long to wait before declaring both providers dead and failing over."
+        hint="How long to wait for an answer provider to produce its first token before failing over."
         value={settings.routing.firstTokenTimeoutMs}
         min={500}
         max={8000}
@@ -314,6 +314,32 @@ export function SettingsPanel() {
         </div>
 
         <div className="space-y-3">
+          <div className="grid gap-3 sm:grid-cols-[minmax(0,1fr)_140px]">
+            <div>
+              <label className="block text-[12px] font-medium text-white/70 mb-1">Target Role</label>
+              <input
+                type="text"
+                maxLength={120}
+                placeholder="e.g. Principal Cloud Architect"
+                value={settings.targetRole}
+                onChange={(e) => void saveSettings({ ...settings, targetRole: e.target.value })}
+                className="w-full rounded-lg border border-white/10 bg-black/50 px-3 py-2 text-[13px] focus:border-accent/40 focus:outline-none"
+              />
+            </div>
+
+            <div>
+              <label className="block text-[12px] font-medium text-white/70 mb-1">Experience (Years)</label>
+              <input
+                type="number"
+                min={0}
+                max={60}
+                value={settings.experienceYears}
+                onChange={(e) => void saveSettings({ ...settings, experienceYears: Number(e.target.value) })}
+                className="w-full rounded-lg border border-white/10 bg-black/50 px-3 py-2 text-[13px] focus:border-accent/40 focus:outline-none"
+              />
+            </div>
+          </div>
+
           <div>
             <label className="block text-[12px] font-medium text-white/70 mb-1">Target Company</label>
             <input

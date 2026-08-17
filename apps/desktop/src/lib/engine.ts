@@ -7,7 +7,7 @@ import {
   listenSystemPrompt,
   transcriptWindow,
   MEETING_SUMMARY_PROMPT,
-  FOLLOWUP_PROMPT,
+  followUpPrompt,
   detectPersona,
   isPersonalQuestion,
   companyIntelPrompt,
@@ -20,7 +20,6 @@ import type {
   AppSettings,
   InterviewMode,
   InterviewCoachInsight,
-  InterviewDebrief,
   StoryBankItem,
   ProviderId,
   RagHit,
@@ -300,6 +299,18 @@ export class Engine {
     return merged;
   }
 
+  private candidateProfile() {
+    return {
+      targetRole: this.settings?.targetRole || "Senior Azure Architect",
+      experienceYears: this.settings?.experienceYears ?? 16,
+    };
+  }
+
+  private candidateCacheKey(question: string): string {
+    const profile = this.candidateProfile();
+    return `${profile.targetRole}|${profile.experienceYears}|${question}`;
+  }
+
   async resetRag(): Promise<void> {
     this.rag = null;
     if (this.settings) {
@@ -352,7 +363,8 @@ export class Engine {
   ): AsyncGenerator<StreamEvent> {
     if (!this.settings) throw new Error("engine is not configured");
     // 1. Check QA Cache for instant lookup (0 API Cost)
-    const cached = findCachedQA(prompt);
+    const cacheKey = this.candidateCacheKey(prompt);
+    const cached = findCachedQA(cacheKey);
     if (cached) {
       console.log("[QA Cache] Instant Hit for prompt:", prompt);
       yield { type: "token", requestId: "cache", delta: `[⚡ Cached Response - 0 API Cost]\n\n${cached.answer}` };
@@ -370,7 +382,13 @@ export class Engine {
 
     let fullAnswer = "";
     for await (const event of this.router.run({
-      system: askSystemPrompt(this.settings.systemPrompt, hits, this.settings.targetCompany, this.settings.targetJd),
+      system: askSystemPrompt(
+        this.settings.systemPrompt,
+        hits,
+        this.settings.targetCompany,
+        this.settings.targetJd,
+        this.candidateProfile(),
+      ),
       messages: [...history, { role: "user", content: prompt }],
       attachments,
       policy: this.settings.routing,
@@ -383,7 +401,7 @@ export class Engine {
     }
 
     if (fullAnswer.trim()) {
-      saveToQACache({ question: prompt, answer: fullAnswer.trim(), persona: detectPersona(prompt) });
+      saveToQACache({ question: cacheKey, answer: fullAnswer.trim(), persona: detectPersona(prompt) });
     }
   }
 
@@ -391,10 +409,16 @@ export class Engine {
   async *suggest(segments: TranscriptSegment[], signal?: AbortSignal): AsyncGenerator<StreamEvent> {
     if (!this.settings) throw new Error("engine is not configured");
     const window = segments.length ? transcriptWindow(segments) : "The user is in a live conversation and needs a quick, direct, and relevant response.";
-    const lastQuestion = [...segments].reverse().find((s) => s.source === "system")?.text ?? window;
+    // Prefer the last system-audio segment as the canonical question; fall back to the
+    // last mic segment (mic-only / solo testing mode) then the full transcript window.
+    const lastQuestion =
+      [...segments].reverse().find((s) => s.source === "system")?.text ??
+      [...segments].reverse().find((s) => s.source === "microphone")?.text ??
+      window;
 
     // 1. Check QA Cache for instant lookup (0 API Cost)
-    const cached = findCachedQA(lastQuestion);
+    const cacheKey = this.candidateCacheKey(lastQuestion);
+    const cached = findCachedQA(cacheKey);
     if (cached) {
       console.log("[QA Cache] Instant Hit for live question:", lastQuestion);
       yield { type: "token", requestId: "cache", delta: `[⚡ Cached Response - 0 API Cost]\n\n${cached.answer}` };
@@ -407,7 +431,13 @@ export class Engine {
 
     let fullAnswer = "";
     for await (const event of this.router.run({
-      system: listenSystemPrompt(this.settings.systemPrompt, hits, this.settings.targetCompany, this.settings.targetJd),
+      system: listenSystemPrompt(
+        this.settings.systemPrompt,
+        hits,
+        this.settings.targetCompany,
+        this.settings.targetJd,
+        this.candidateProfile(),
+      ),
       messages: [
         {
           role: "user",
@@ -425,7 +455,7 @@ export class Engine {
     }
 
     if (fullAnswer.trim()) {
-      saveToQACache({ question: lastQuestion, answer: fullAnswer.trim(), persona: detectPersona(lastQuestion) });
+      saveToQACache({ question: cacheKey, answer: fullAnswer.trim(), persona: detectPersona(lastQuestion) });
     }
   }
 
@@ -464,7 +494,7 @@ export class Engine {
         console.warn(`Primary provider ${this.settings.routing.primary} failed for background task, falling back to ${this.settings.routing.secondary}:`, e.message);
         try {
           return await runWithProvider(this.settings.routing.secondary);
-        } catch (fallbackErr) {
+        } catch {
           throw e; // Throw the original primary error if fallback also fails
         }
       }
@@ -485,14 +515,19 @@ export class Engine {
   }
 
   async followUps(segments: TranscriptSegment[]): Promise<string[]> {
-    const raw = await this.collect(FOLLOWUP_PROMPT, transcriptWindow(segments, 3000));
+    const raw = await this.collect(followUpPrompt(this.candidateProfile()), transcriptWindow(segments, 3000));
     return parseStructuredJson<string[]>(raw, []).slice(0, 3);
   }
 
   async generateEndInterviewQuestions(segments: TranscriptSegment[]): Promise<Array<{ question: string; context: string; followUpNote: string; expectedAnswer: string; professionalExample: string; category: "Technical" | "HR" }>> {
     if (!this.settings) return [];
     const window = segments.length ? transcriptWindow(segments, 8000) : "";
-    const { system, user } = endOfInterviewQuestionsPrompt(window, this.settings.targetCompany, this.settings.targetJd);
+    const { system, user } = endOfInterviewQuestionsPrompt(
+      window,
+      this.settings.targetCompany,
+      this.settings.targetJd,
+      this.candidateProfile(),
+    );
     const raw = await this.collect(system, user, 3000, true);
     const parsed = parseStructuredJson<Array<{ question: string; context: string; followUpNote: string; expectedAnswer: string; professionalExample: string; category: "Technical" | "HR" }>>(raw, []);
     return Array.isArray(parsed) ? parsed : [];
@@ -503,7 +538,8 @@ export class Engine {
     const { system, user } = coachingTipPrompt(
       segments,
       this.settings.targetCompany,
-      this.settings.targetJd
+      this.settings.targetJd,
+      this.candidateProfile(),
     );
 
     for await (const event of this.router.run({
@@ -548,6 +584,8 @@ export class Engine {
       mode: options.mode,
       targetCompany: this.settings.targetCompany,
       targetJd: this.settings.targetJd,
+      targetRole: this.settings.targetRole,
+      experienceYears: this.settings.experienceYears,
       ...(options.storyBank ? { storyBank: options.storyBank.slice(0, 6) } : {}),
       ...(options.transcript ? { transcript: options.transcript } : {}),
     });
@@ -628,7 +666,7 @@ export class Engine {
     }
 
     // 2. Format prompt
-    const { system, user } = companyIntelPrompt(scrapedText, jdText);
+    const { system, user } = companyIntelPrompt(scrapedText, jdText, this.candidateProfile());
 
     // 3. Collect completion from AI router — use a high token limit + JSON mode for the rich JSON profile
     const raw = await this.collect(system, user, 6000, true);
@@ -786,11 +824,10 @@ function extractJsonCandidate(raw: string): string | null {
     .replace(/\s*```$/i, "")
     .trim();
 
-  const start = unfenced.search(/[\[{]/);
+  const start = unfenced.search(/[[{]/);
   if (start === -1) return null;
 
   const source = unfenced.slice(start);
-  const open = source[0];
   const stack: string[] = [];
   let inString = false;
   let escaped = false;

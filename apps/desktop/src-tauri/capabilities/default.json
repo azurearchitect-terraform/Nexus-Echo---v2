@@ -6,6 +6,7 @@
   "permissions": [
     "core:default",
     "core:window:allow-start-dragging",
+    "core:window:allow-start-resize-dragging",
     "core:window:allow-set-always-on-top",
     "core:window:allow-set-ignore-cursor-events",
     "core:window:allow-set-position",
@@ -16,7 +17,6 @@
     "global-shortcut:default",
     "dialog:default",
     "fs:default",
-    "opener:default",
     "clipboard-manager:default",
     "notification:default"
   ]

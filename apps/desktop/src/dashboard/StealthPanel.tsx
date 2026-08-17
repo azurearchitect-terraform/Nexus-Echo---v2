@@ -33,7 +33,7 @@ const OPTIONS = [
   {
     key: "clickThrough" as const,
     title: "Click-through",
-    body: "Mouse events pass straight to whatever is underneath. The overlay becomes purely visual — you drive it entirely with hotkeys.",
+    body: "Mouse events pass straight to whatever is underneath. Press Ctrl+Shift+R from any application to temporarily restore interaction and resize the overlay, then press it again to return to click-through.",
   },
 ];
 

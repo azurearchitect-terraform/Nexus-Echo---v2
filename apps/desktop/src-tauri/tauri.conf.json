@@ -48,8 +48,8 @@
       }
     ],
     "security": {
-      "csp": "default-src 'self'; img-src 'self' asset: data: blob: https:; style-src 'self' 'unsafe-inline'; script-src 'self'; connect-src 'self' ipc: http://ipc.localhost https://api.openai.com https://generativelanguage.googleapis.com http://127.0.0.1:11434 http://localhost:11434",
-      "assetProtocol": { "enable": true, "scope": ["$APPDATA/**", "$TEMP/**"] }
+      "csp": "default-src 'self'; img-src 'self' data: blob: https:; style-src 'self' 'unsafe-inline'; script-src 'self'; connect-src 'self' ipc: http://ipc.localhost https://api.openai.com https://generativelanguage.googleapis.com http://127.0.0.1:11434 http://localhost:11434",
+      "assetProtocol": { "enable": false }
     }
   },
   "bundle": {

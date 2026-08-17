@@ -62,7 +62,6 @@ export function createGeminiProvider(creds: ProviderCredentials): Provider {
       let hadContent = false;
       let lastCandidate: any = null;
       for await (const frame of readSSE(res)) {
-        console.debug("[Gemini] SSE Frame:", JSON.stringify(frame));
         const candidates = frame["candidates"] as
           | Array<{ content?: { parts?: Array<{ text?: string }> }; finishReason?: string }>
           | undefined;

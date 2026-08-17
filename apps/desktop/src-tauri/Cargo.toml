@@ -14,7 +14,7 @@ crate-type = ["staticlib", "cdylib", "rlib"]
 tauri-build = { version = "2", features = [] }
 
 [dependencies]
-tauri = { version = "2", features = ["protocol-asset", "macos-private-api", "tray-icon", "image-png"] }
+tauri = { version = "2", features = ["macos-private-api", "tray-icon", "image-png"] }
 tauri-plugin-global-shortcut = "2"
 tauri-plugin-dialog = "2"
 tauri-plugin-fs = "2"
@@ -47,7 +47,7 @@ rubato = "0.15"
 hound = "3.5"
 
 # Screen capture for vision mode
-xcap = "0.0.14"
+xcap = "0.9.8"
 image = "0.25"
 base64 = "0.22"
 zip = "^2.2.0"

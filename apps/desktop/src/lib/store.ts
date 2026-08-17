@@ -1,6 +1,17 @@
 import { create } from "zustand";
 import { detectPersona } from "@nexus/ai";
-import { AppSettings, uid, type Attachment, type TranscriptSegment, type ProviderId, type CompanyIntel, type SpeakerPacing } from "@nexus/core";
+import {
+  AppSettings,
+  uid,
+  type Attachment,
+  type TranscriptSegment,
+  type ProviderId,
+  type CompanyIntel,
+  type SpeakerPacing,
+  isActionableQuestion,
+  analyzeQuestionCompleteness,
+  QUESTION_INDICATORS,
+} from "@nexus/core";
 import { bridge } from "./bridge";
 import { engine, verifyAzureSpecs } from "./engine";
 import { emit, listen } from "@tauri-apps/api/event";
@@ -22,6 +33,7 @@ export type Mode = "ask" | "listen" | "intel";
 
 export interface Answer {
   id: string;
+  createdAt: number;
   question?: string | undefined;
   persona?: string | undefined;
   text: string;
@@ -113,6 +125,8 @@ const DEFAULT_SETTINGS = AppSettings.parse({
     { id: "openai", enabled: true, keyRef: "openai_api_key", priority: 20, models: {} },
     { id: "ollama", enabled: false, baseUrl: "http://127.0.0.1:11434", priority: 30, models: {} },
   ],
+  targetRole: "Senior Azure Architect",
+  experienceYears: 16,
 });
 
 let suggestDebounceTimer: ReturnType<typeof setTimeout> | null = null;
@@ -121,153 +135,6 @@ let speculativeWaitTimer: ReturnType<typeof setTimeout> | null = null;
 let speculativeAbortController: AbortController | null = null;
 let activeAbortController: AbortController | null = null;
 let lastSuggestSegmentIndex = -1; // Track which segment index was last consumed by suggest()
-
-// ─── INCOMPLETE SENTENCE STARTERS ──────────────────────────────
-// These phrases typically begin multi-part scenario questions.
-// If the transcript STARTS with one of these and does not yet
-// contain a question word (what/how/why/explain), it is almost
-// certainly incomplete.
-const SCENARIO_STARTERS = [
-  "suppose", "consider", "imagine", "given", "let's say", "let us say",
-  "scenario", "think about", "picture this", "say you have",
-  "assume", "pretend", "take a case",
-];
-
-/**
- * Analyzes whether a transcript chunk represents a COMPLETE interview
- * question that is ready to be sent to the LLM.
- *
- * Returns a confidence score from 0.0 (definitely incomplete) to 1.0
- * (definitely complete). The caller uses this to set a dynamic wait:
- *   - >= 0.85  → submit almost immediately (300ms buffer)
- *   - 0.50–0.84 → moderate wait (1000–2000ms)
- *   - < 0.50  → long wait (3000–5000ms), question is likely incomplete
- */
-function analyzeQuestionCompleteness(text: string, sttConfidence?: number): number {
-  const trimmed = text.trim();
-  if (!trimmed) return 0;
-
-  const lower = trimmed.toLowerCase();
-  const words = lower.split(/\s+/).filter(Boolean);
-  if (words.length === 0) return 0;
-
-  let score = 0.5; // Start neutral
-
-  // ── Signal 1: Ends with question mark → strong completion signal
-  if (trimmed.endsWith("?")) {
-    score += 0.35;
-  }
-
-  // ── Signal 2: Ends with period or exclamation → likely complete statement
-  if (trimmed.endsWith(".") || trimmed.endsWith("!")) {
-    score += 0.20;
-  }
-
-  // ── Signal 3: Ends with trailing connector → definitely incomplete
-  const lastWord = words[words.length - 1];
-  if (lastWord && INCOMPLETE_TRAILING_WORDS.includes(lastWord)) {
-    score -= 0.40;
-  }
-
-  // ── Signal 4: Starts with scenario starter without question word
-  const startsWithScenario = SCENARIO_STARTERS.some((s) => lower.startsWith(s));
-  const hasQuestionWord = ["what", "how", "why", "explain", "describe", "tell me", "walk me"].some(
-    (q) => lower.includes(q),
-  );
-  if (startsWithScenario && !hasQuestionWord) {
-    score -= 0.30;
-  }
-
-  // ── Signal 5: Contains a question word → boost
-  if (hasQuestionWord) {
-    score += 0.10;
-  }
-
-  // ── Signal 6: Very short transcript (< 5 words) without question mark
-  if (words.length < 5 && !trimmed.endsWith("?")) {
-    score -= 0.15;
-  }
-
-  // ── Signal 7: Reasonable length (8+ words) with question structure
-  if (words.length >= 8 && (trimmed.endsWith("?") || hasQuestionWord)) {
-    score += 0.10;
-  }
-
-  // ── Signal 8: STT confidence factor
-  if (sttConfidence !== undefined && sttConfidence < 0.6) {
-    score -= 0.15; // Low STT confidence → might be garbled mid-sentence
-  }
-
-  // ── Signal 9: Ends with an ellipsis-like pattern ("...")
-  if (trimmed.endsWith("...") || trimmed.endsWith("…")) {
-    score -= 0.35;
-  }
-
-  // Clamp to [0, 1]
-  return Math.max(0, Math.min(1, score));
-}
-
-const NON_QUESTION_PHRASES = new Set([
-  "hello", "hi", "hey", "thank you", "thanks", "okay", "ok", "got it", "sure",
-  "mhm", "yeah", "yes", "no", "cool", "alright", "right", "good morning",
-  "good afternoon", "bye", "see you", "ding", "chime", "ping", "bell", "beep",
-  "sound", "noise", "thank you very much", "thanks a lot", "sounds good",
-  "makes sense", "i see", "understood", "great", "perfect", "awesome",
-  "testing", "microphones", "check"
-]);
-
-const QUESTION_INDICATORS = [
-  "what", "why", "how", "when", "where", "who", "which",
-  "can", "could", "would", "should", "explain", "describe", "tell",
-  "difference", "versus", "compare", "architecture", "design", "implement",
-  "experience", "scenario", "suppose", "consider", "imagine", "given",
-  "have you", "do you", "did you", "is there", "are there", "what is",
-  "what are", "how do", "how to", "why do", "why is", "can you", "could you"
-];
-
-const INCOMPLETE_TRAILING_WORDS = [
-  "and", "or", "so", "but", "with", "that", "where", "if", "then", "to",
-  "for", "about", "is", "are", "a", "an", "the", "suppose", "consider",
-  "imagine", "given", "when", "as", "like", "because"
-];
-
-export function isActionableQuestion(text: string): boolean {
-  const trimmed = text.trim();
-  if (!trimmed) return false;
-
-  const lower = trimmed.toLowerCase().replace(/[^a-z0-9\s]/g, "");
-  if (NON_QUESTION_PHRASES.has(lower)) return false;
-
-  const words = lower.split(/\s+/).filter(Boolean);
-  if (words.length < 3) {
-    if (trimmed.endsWith("?")) return true;
-    if (words.some((w) => ["what", "why", "how", "explain"].includes(w))) return true;
-    return false;
-  }
-
-  if (trimmed.endsWith("?")) return true;
-  return QUESTION_INDICATORS.some((ind) => lower.includes(ind));
-}
-
-export function isIncompleteScenario(text: string): boolean {
-  const trimmed = text.trim();
-  if (!trimmed) return false;
-  if (trimmed.endsWith("?")) return false;
-
-  const lower = trimmed.toLowerCase();
-  const words = lower.split(/\s+/).filter(Boolean);
-  if (words.length === 0) return false;
-
-  const lastWord = words[words.length - 1];
-  if (lastWord && INCOMPLETE_TRAILING_WORDS.includes(lastWord)) return true;
-
-  const startsWithScenario = ["suppose", "consider", "imagine", "given", "scenario", "let's say"].some((s) => lower.startsWith(s));
-  if (startsWithScenario && !lower.includes("what") && !lower.includes("how") && !lower.includes("why") && !lower.includes("explain")) {
-    return true;
-  }
-
-  return false;
-}
 
 function hexToRgbStr(hex: string): string {
   const cleanHex = hex.replace("#", "");
@@ -418,7 +285,7 @@ export const useStore = create<AppStore>((set, get) => ({
     const answerId = uid("ans");
     set({
       streaming: true,
-      answer: { id: answerId, question: prompt, persona, text: "", citations: [] },
+      answer: { id: answerId, createdAt: Date.now(), question: prompt, persona, text: "", citations: [] },
       history: [...get().history, { role: "user", content: prompt }],
     });
 
@@ -620,9 +487,18 @@ export const useStore = create<AppStore>((set, get) => ({
         confidence: null,
       }).catch(console.error);
 
-      // If the candidate starts speaking (microphone segment) and we have a pending suggestion or countdown,
+      const settings = get().settings;
+      const isMicOnly = settings.audio.captureMicrophone && !settings.audio.captureSystemAudio;
+      // In dual-capture mode treat mic as question source when no system audio has arrived
+      // yet (e.g. solo testing). Once the interviewer speaks the first segment, revert to
+      // the normal dual-capture roles (system = interviewer, mic = candidate).
+      const hasReceivedSystemAudio = get().segments.some((s) => s.source === "system");
+      const effectiveMicOnly = isMicOnly || (settings.audio.captureMicrophone && settings.audio.captureSystemAudio && !hasReceivedSystemAudio);
+      const isInterviewerSource = segment.source === "system" || effectiveMicOnly;
+
+      // If the candidate starts speaking (microphone segment in dual-capture mode) and we have a pending suggestion or countdown,
       // it means the interviewer finished and the candidate started answering. Trigger suggest() immediately!
-      if (segment.source === "microphone") {
+      if (!effectiveMicOnly && segment.source === "microphone") {
         if (suggestDebounceTimer) {
           clearTimeout(suggestDebounceTimer);
           suggestDebounceTimer = null;
@@ -632,19 +508,20 @@ export const useStore = create<AppStore>((set, get) => ({
           smartWaitTimer = null;
           set({ isSmartWaiting: false, smartWaitConfidence: null });
           console.log("[SmartWait] Candidate started speaking. Triggering suggested answer immediately!");
+          lastSuggestSegmentIndex = get().segments.length - 1;
           void get().suggest();
         }
-        return; // Candidate speaking does not trigger new suggestions
+        return; // In dual mode, candidate speaking does not start a new interviewer question countdown
       }
 
-      // ONLY trigger live suggestions if auto-respond is enabled and the speaker is the interviewer ("system")
-      if (get().settings.autoRespond !== "manual-only" && segment.source === "system") {
+      // ONLY trigger live suggestions if auto-respond is enabled
+      if (settings.autoRespond !== "manual-only" && isInterviewerSource) {
         // ── SHORT SEGMENT GUARD ──
         // In production, speaker audio capture produces micro-segments (filler words,
         // background noise transcribed as "um", "right", etc.). These should NOT cancel
         // an active smartWait timer, otherwise the timer never fires and auto-send breaks.
         const segWords = segment.text.trim().split(/\s+/).filter(Boolean);
-        const isShortFiller = segWords.length < 4 && !segment.text.trim().endsWith("?") &&
+        const isShortFiller = segWords.length < 3 && !segment.text.trim().endsWith("?") &&
           !QUESTION_INDICATORS.some((q) => segment.text.toLowerCase().includes(q));
 
         if (isShortFiller && smartWaitTimer) {
@@ -653,7 +530,7 @@ export const useStore = create<AppStore>((set, get) => ({
           return;
         }
 
-        // Cancel active smart wait — interviewer is speaking a substantial new segment
+        // Cancel active smart wait — speaker is speaking a substantial new segment
         if (smartWaitTimer) {
           clearTimeout(smartWaitTimer);
           smartWaitTimer = null;
@@ -684,7 +561,7 @@ export const useStore = create<AppStore>((set, get) => ({
           ? allSegments.slice(lastAnsweredIdx + 1)
           : allSegments.slice(-5);
         const combinedText = freshSegments
-          .filter((s) => s.source === "system")
+          .filter((s) => s.source === segment.source)
           .map((s) => s.text)
           .join(" ");
 
@@ -693,15 +570,14 @@ export const useStore = create<AppStore>((set, get) => ({
           void get().generateEndQuestions();
         }
 
-        if (!isActionableQuestion(combinedText)) {
-          return; // Ignore notification noise, casual remarks, non-questions
+        if (!isActionableQuestion(combinedText, settings.autoRespond)) {
+          return; // Ignore noise and non-questions
         }
 
         // Auto-pacing detection: if the interviewer has consecutive segments within 3 seconds,
         // and we are in "auto" pacing mode, dynamically adjust VAD silence threshold to "slow"
-        const settings = get().settings;
         if (settings.audio.speakerPacing === "auto") {
-          const systemSegments = allSegments.filter((s) => s.source === "system");
+          const systemSegments = allSegments.filter((s) => s.source === segment.source);
           if (systemSegments.length >= 2) {
             const last = systemSegments[systemSegments.length - 1];
             const prev = systemSegments[systemSegments.length - 2];
@@ -720,28 +596,28 @@ export const useStore = create<AppStore>((set, get) => ({
         const sttConfidence = segment.confidence ?? undefined;
         const completeness = analyzeQuestionCompleteness(combinedText, sttConfidence);
 
-        // Pacing multiplier: slow speakers get longer waits
+        // Pacing multiplier: slow speakers get slightly longer waits, fast speakers get snappier responses
         const pacing = settings.audio.speakerPacing;
         let pacingMultiplier = 1.0;
         if (pacing === "fast") pacingMultiplier = 0.5;
-        else if (pacing === "slow") pacingMultiplier = 1.8;
-        else if (pacing === "auto") pacingMultiplier = 1.3;
+        else if (pacing === "slow") pacingMultiplier = 1.5;
+        else if (pacing === "auto") pacingMultiplier = 1.1;
 
         // Dynamic wait time based on completeness confidence
-        // Production-tuned: shorter waits to prevent indefinite "Waiting..." states
+        // Production-tuned: responsive and crisp so the candidate never has to wait unnecessarily
         let waitMs: number;
-        if (completeness >= 0.85) {
-          waitMs = Math.round(200 * pacingMultiplier);
-        } else if (completeness >= 0.60) {
-          waitMs = Math.round(800 * pacingMultiplier);
-        } else if (completeness >= 0.40) {
-          waitMs = Math.round(1500 * pacingMultiplier);
+        if (completeness >= 0.75) {
+          waitMs = Math.round(250 * pacingMultiplier);
+        } else if (completeness >= 0.50) {
+          waitMs = Math.round(650 * pacingMultiplier);
+        } else if (completeness >= 0.30) {
+          waitMs = Math.round(1100 * pacingMultiplier);
         } else {
-          waitMs = Math.round(2500 * pacingMultiplier);
+          waitMs = Math.round(1600 * pacingMultiplier);
         }
 
-        // Hard cap: never wait more than 4 seconds regardless of pacing
-        waitMs = Math.min(waitMs, 4000);
+        // Hard cap: never wait more than 2.2 seconds regardless of pacing
+        waitMs = Math.min(waitMs, 2200);
 
         console.log(
           `[SmartWait] Completeness: ${(completeness * 100).toFixed(0)}% | ` +
@@ -752,7 +628,7 @@ export const useStore = create<AppStore>((set, get) => ({
         set({ isSmartWaiting: true, smartWaitConfidence: completeness });
 
         // Speculative Execution Timer
-        const baseSpeculativeMs = settings.routing.speculativeWaitMs ?? 350;
+        const baseSpeculativeMs = settings.routing.speculativeWaitMs ?? 300;
         const dynamicSpeculativeMs = Math.round(baseSpeculativeMs * pacingMultiplier);
         
         // Set this up if smart wait is going to take longer than speculative wait anyway.
@@ -883,7 +759,7 @@ export const useStore = create<AppStore>((set, get) => ({
     const answerId = uid("ans");
     set({
       streaming: true,
-      answer: { id: answerId, question: "Coaching Tip", persona: "Interview Coach", text: "", citations: [] },
+      answer: { id: answerId, createdAt: Date.now(), question: "Coaching Tip", persona: "Interview Coach", text: "", citations: [] },
     });
     
     try {
@@ -980,7 +856,7 @@ export const useStore = create<AppStore>((set, get) => ({
       console.log("[Speculative] Starting background generation...");
       set({
         isSpeculating: true,
-        speculativeAnswer: { id: answerId, question: lastQuestion || undefined, persona, text: "", citations: [] },
+        speculativeAnswer: { id: answerId, createdAt: Date.now(), question: lastQuestion || undefined, persona, text: "", citations: [] },
       });
     } else {
       activeAbortController = new AbortController();
@@ -990,7 +866,7 @@ export const useStore = create<AppStore>((set, get) => ({
         isSpeculating: false,
         isSpeculationComplete: false,
         speculativeAnswer: null,
-        answer: { id: answerId, question: lastQuestion || undefined, persona, text: "", citations: [] },
+        answer: { id: answerId, createdAt: Date.now(), question: lastQuestion || undefined, persona, text: "", citations: [] },
       });
     }
 
@@ -1139,7 +1015,7 @@ export const useStore = create<AppStore>((set, get) => ({
     void get().suggest();
   },
 
-  finalizeAnswer(final: Answer, lastQuestion: string, segments: TranscriptSegment[]) {
+  finalizeAnswer(final: Answer) {
     const verifiedSpec = verifyAzureSpecs(final.text);
     const verifiedAnswer = { ...final, verifiedSpec };
     set((s) => ({

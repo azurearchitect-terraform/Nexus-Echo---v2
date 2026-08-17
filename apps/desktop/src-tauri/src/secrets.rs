@@ -1,7 +1,8 @@
 //! Provider credentials live in the OS keychain — Keychain on macOS, Credential
 //! Manager on Windows, Secret Service on Linux. They are never written to the
-//! SQLite database, never serialized into settings JSON, and never returned to the
-//! frontend. The UI only ever sees a masked hint like `sk-...4f2a`.
+//! SQLite database or serialized into settings JSON. Provider and transcription
+//! requests currently run in the webview, so the raw value crosses IPC only when
+//! a configured provider needs it; normal settings UI uses masked hints.
 
 use anyhow::{anyhow, Result};
 use keyring::Entry;

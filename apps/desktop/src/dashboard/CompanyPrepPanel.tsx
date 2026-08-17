@@ -7,6 +7,8 @@ import { useStore } from "@/lib/store";
 export function CompanyPrepPanel() {
   const latestCompanyIntel = useStore((s) => s.latestCompanyIntel);
   const setLatestCompanyIntel = useStore((s) => s.setLatestCompanyIntel);
+  const settings = useStore((s) => s.settings);
+  const saveSettings = useStore((s) => s.saveSettings);
   const [url, setUrl] = useState("");
   const [jdText, setJdText] = useState("");
   const [loading, setLoading] = useState(false);
@@ -79,6 +81,34 @@ export function CompanyPrepPanel() {
             placeholder="google.com or https://google.com"
             className="w-full rounded-lg border border-white/10 bg-black/40 px-3.5 py-2 text-[13px] focus:border-accent/50 focus:outline-none focus:ring-1 focus:ring-accent/50 transition-colors"
           />
+        </div>
+
+        <div className="grid gap-3 sm:grid-cols-[minmax(0,1fr)_140px]">
+          <div className="space-y-1.5">
+            <label className="block text-[12px] font-medium text-white/50">Target Role</label>
+            <input
+              type="text"
+              maxLength={120}
+              value={settings.targetRole}
+              onChange={(e) => void saveSettings({ ...settings, targetRole: e.target.value })}
+              disabled={loading}
+              placeholder="e.g. Principal Cloud Architect"
+              className="w-full rounded-lg border border-white/10 bg-black/40 px-3.5 py-2 text-[13px] focus:border-accent/50 focus:outline-none focus:ring-1 focus:ring-accent/50 transition-colors"
+            />
+          </div>
+
+          <div className="space-y-1.5">
+            <label className="block text-[12px] font-medium text-white/50">Experience (Years)</label>
+            <input
+              type="number"
+              min={0}
+              max={60}
+              value={settings.experienceYears}
+              onChange={(e) => void saveSettings({ ...settings, experienceYears: Number(e.target.value) })}
+              disabled={loading}
+              className="w-full rounded-lg border border-white/10 bg-black/40 px-3.5 py-2 text-[13px] focus:border-accent/50 focus:outline-none focus:ring-1 focus:ring-accent/50 transition-colors"
+            />
+          </div>
         </div>
 
         <div className="space-y-1.5">
@@ -286,7 +316,7 @@ export function CompanyPrepPanel() {
               <MessageCircleQuestion className="h-4 w-4" /> Recommended End-of-Session Discussion Q&amp;A
             </h4>
             <p className="text-[12px] text-white/40 leading-relaxed">
-              These strategic questions are designed based on your 16 years of architecture experience, tailored to this company's culture and system footprint. Use them to establish a healthy peer-to-peer discussion:
+              These strategic questions are designed for your {settings.targetRole || "target role"}{settings.experienceYears > 0 ? ` profile with ${settings.experienceYears} years of experience` : " profile"}, tailored to this company's culture and system footprint. Use them to establish a healthy peer-to-peer discussion:
             </p>
             
             <div className="space-y-3">
@@ -309,7 +339,7 @@ export function CompanyPrepPanel() {
                     </div>
 
                     <div className="rounded-lg bg-black/25 p-3 border border-white/5">
-                      <p className="text-[10px] text-white/35 font-medium uppercase tracking-wider">Suggested Points to Bring Up (From Your 16 Years Exp)</p>
+                      <p className="text-[10px] text-white/35 font-medium uppercase tracking-wider">Suggested Points for Your {settings.targetRole || "Target Role"}</p>
                       <ul className="list-disc list-inside text-[12.5px] text-white/60 space-y-1 mt-1 leading-relaxed">
                         {q.suggestedPoints.map((point, pIdx) => (
                           <li key={pIdx}>{point}</li>
