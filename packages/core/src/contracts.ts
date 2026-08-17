@@ -162,6 +162,46 @@ export const InterviewDebrief = z.object({
 });
 export type InterviewDebrief = z.infer<typeof InterviewDebrief>;
 
+export const SpeechQualityMetrics = z.object({
+  /** Words per minute (average across the entire response) */
+  wordsPerMinute: z.number().min(0).default(0),
+  
+  /** Number of filler words detected: "um", "uh", "like", "basically", "actually", "you know", etc. */
+  fillerWordCount: z.number().min(0).int().default(0),
+  
+  /** Filler words as percentage of total words */
+  fillerWordPercentage: z.number().min(0).max(100).default(0),
+  
+  /** Average pause duration in milliseconds between words/sentences */
+  averagePauseDurationMs: z.number().min(0).default(0),
+  
+  /** Total number of significant pauses (>500ms) detected */
+  significantPauseCount: z.number().min(0).int().default(0),
+  
+  /** Percentage of time spent pausing vs. speaking */
+  pauseToSpeechRatio: z.number().min(0).default(0),
+  
+  /** Estimated clarity: ratio of complete sentences to fragments (higher = clearer) */
+  claritySentenceCompletion: z.number().min(0).max(100).default(0),
+  
+  /** Confidence score based on speaking pattern (steady vs. hesitant): 0-100 */
+  confidenceFromDelivery: z.number().min(0).max(100).default(0),
+  
+  /** Speech rate consistency: 0-100 (higher = more consistent pacing) */
+  speechRateConsistency: z.number().min(0).max(100).default(0),
+  
+  /** Array of detected filler words with their positions in transcript */
+  fillerWordInstances: z.array(z.object({
+    word: z.string(),
+    position: z.number().int(), // character position in transcript
+    timestamp: z.number(), // milliseconds into the response
+  })).default([]),
+  
+  /** Overall speech quality score: 0-100 (composite of all metrics) */
+  overallSpeechQuality: z.number().min(0).max(100).default(0),
+});
+export type SpeechQualityMetrics = z.infer<typeof SpeechQualityMetrics>;
+
 export const AppSettings = z.object({
   routing: RoutingPolicy.default({}),
   stealth: StealthConfig.default({}),

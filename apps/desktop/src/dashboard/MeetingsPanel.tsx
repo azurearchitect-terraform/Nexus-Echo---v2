@@ -9,7 +9,7 @@ export function MeetingsPanel() {
   const [hits, setHits] = useState<SearchHit[]>([]);
   const [meetingsList, setMeetingsList] = useState<SearchHit[]>([]);
   const { segments } = useStore();
-  const [latestReport, setLatestReport] = useState<{ meetingId: string; summary: any } | null>(null);
+  const [latestReport, setLatestReport] = useState<{ meetingId: string; summary: any; speechMetrics?: any; speechFeedback?: string[] } | null>(null);
 
   const loadMeetings = async () => {
     try {
@@ -92,6 +92,37 @@ export function MeetingsPanel() {
                     <span>{typeof item === "string" ? item : item.text}</span>
                   </div>
                 ))}
+              </div>
+            </div>
+          )}
+
+          {/* Speech Quality Metrics */}
+          {latestReport.speechMetrics && (
+            <div className="rounded-lg border border-blue-400/30 bg-blue-400/[0.08] p-4 space-y-2">
+              <h4 className="text-[11px] font-mono uppercase tracking-wider text-blue-300 font-semibold">Speech Quality Analysis</h4>
+              <div className="grid grid-cols-2 gap-3 text-[11px]">
+                <div className="space-y-1">
+                  <p className="text-white/60">Overall Score</p>
+                  <p className="text-[13px] font-semibold text-blue-300">
+                    {Math.round(latestReport.speechMetrics.overallSpeechQuality)}/100
+                  </p>
+                </div>
+                <div className="space-y-1">
+                  <p className="text-white/60">Words/Min</p>
+                  <p className="text-[13px] font-semibold text-blue-300">{latestReport.speechMetrics.wordsPerMinute}</p>
+                </div>
+                <div className="space-y-1">
+                  <p className="text-white/60">Filler Words</p>
+                  <p className="text-[13px] font-semibold text-blue-300">
+                    {latestReport.speechMetrics.fillerWordPercentage}%
+                  </p>
+                </div>
+                <div className="space-y-1">
+                  <p className="text-white/60">Clarity</p>
+                  <p className="text-[13px] font-semibold text-blue-300">
+                    {Math.round(latestReport.speechMetrics.claritySentenceCompletion)}/100
+                  </p>
+                </div>
               </div>
             </div>
           )}

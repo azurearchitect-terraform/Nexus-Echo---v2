@@ -1,5 +1,5 @@
 import { create } from "zustand";
-import { detectPersona } from "@nexus/ai";
+import { detectPersona, analyzeSpeechQuality, generateSpeechFeedback } from "@nexus/ai";
 import {
   AppSettings,
   uid,
@@ -8,6 +8,7 @@ import {
   type ProviderId,
   type CompanyIntel,
   type SpeakerPacing,
+  type SpeechQualityMetrics,
   isActionableQuestion,
   analyzeQuestionCompleteness,
   QUESTION_INDICATORS,
@@ -83,6 +84,8 @@ interface AppStore {
   coverageChecklist: CoverageChecklistItem[];
   nextQuestions: FollowUpPrediction[];
   interviewDebriefs: InterviewDebrief[];
+  speechMetrics: SpeechQualityMetrics | null;
+  speechFeedback: string[];
 
   boot: () => Promise<void>;
   setMode: (mode: Mode) => void;
@@ -190,6 +193,8 @@ export const useStore = create<AppStore>((set, get) => ({
   coverageChecklist: [],
   nextQuestions: [],
   interviewDebriefs: loadInterviewDebriefs(),
+  speechMetrics: null,
+  speechFeedback: [],
 
   async boot() {
     const raw = await bridge.loadSettings();
@@ -405,28 +410,96 @@ export const useStore = create<AppStore>((set, get) => ({
     set({ listening: false, speakingMic: false, speakingSystem: false });
 
     if (meetingId && segments.length) {
-      const summary = await engine.summarizeMeeting(segments);
+      try {
+        // Get user's spoken answer transcript
+        const userSpokenSegments = segments.filter((s) => s.source === "microphone" && s.text.trim().length > 10);
+        const userSpokenText = userSpokenSegments.map((s) => s.text.trim()).join("\n\n");
+        
+        // Analyze speech quality metrics
+        let speechMetrics: SpeechQualityMetrics | null = null;
+        let speechFeedback: string[] = [];
+        if (userSpokenText && userSpokenSegments.length > 0) {
+          try {
+            // Convert segments to timing format for analysis
+            const timingSegments = userSpokenSegments.map(s => ({
+              text: s.text,
+              startMs: s.startMs,
+              endMs: s.endMs,
+            }));
+            
+            speechMetrics = analyzeSpeechQuality(userSpokenText, timingSegments);
+            speechFeedback = generateSpeechFeedback(speechMetrics);
+            set({ speechMetrics, speechFeedback });
+            console.log("[Speech Analytics]", speechMetrics);
+          } catch (err) {
+            console.warn("[Speech Analytics] Failed to analyze speech quality:", err);
+          }
+        }
+
+        const summary = await engine.summarizeMeeting(segments);
+        await bridge.finalizeMeeting({
+          meetingId,
+          title: summary.title || "Untitled meeting",
+          summary: summary.summary || "No summary available.",
+          decisions: JSON.stringify(summary.decisions || []),
+          actionItems: JSON.stringify(summary.actionItems || []),
+          participants: JSON.stringify(summary.participants || []),
+        });
+        void emit("nexus://meeting-finalized", { meetingId, summary, speechMetrics, speechFeedback });
+
+        // Index the user's spoken answers into RAG so the system learns their style!
+        if (userSpokenText) {
+          const docId = `user_speech_${meetingId}`;
+          const title = `User Spoken Answers (${summary.title || "Untitled"})`;
+          void engine.indexUserSpeech(docId, title, userSpokenText).catch(console.error);
+        }
+      } catch (err) {
+        // Fallback when AI summarization fails (no provider configured, API error, timeout, etc)
+        console.error("[Meeting Summary] AI summarization failed, emitting fallback summary:", err);
+        
+        const fallbackSummary = {
+          title: "Interview Session",
+          summary: `Interview captured ${segments.length} transcript segments. AI summarization failed - check your provider configuration and API keys in Settings.`,
+          decisions: [],
+          actionItems: [],
+          openQuestions: [],
+          participants: [],
+        };
+        
+        await bridge.finalizeMeeting({
+          meetingId,
+          title: fallbackSummary.title,
+          summary: fallbackSummary.summary,
+          decisions: JSON.stringify(fallbackSummary.decisions),
+          actionItems: JSON.stringify(fallbackSummary.actionItems),
+          participants: JSON.stringify(fallbackSummary.participants),
+        });
+        
+        // Emit the event even on failure so the debrief panel shows something
+        void emit("nexus://meeting-finalized", { meetingId, summary: fallbackSummary });
+      }
+    } else if (meetingId && !segments.length) {
+      // Handle case where meeting exists but no segments were captured
+      console.warn("[Meeting Summary] No transcript segments captured during interview");
+      const emptySummary = {
+        title: "Interview Session (No Audio)",
+        summary: "No audio segments were captured during this interview session. Please check your microphone settings and audio permissions.",
+        decisions: [],
+        actionItems: [],
+        openQuestions: [],
+        participants: [],
+      };
+      
       await bridge.finalizeMeeting({
         meetingId,
-        title: summary.title || "Untitled meeting",
-        summary: summary.summary || "No summary available.",
-        decisions: JSON.stringify(summary.decisions || []),
-        actionItems: JSON.stringify(summary.actionItems || []),
-        participants: JSON.stringify(summary.participants || []),
+        title: emptySummary.title,
+        summary: emptySummary.summary,
+        decisions: JSON.stringify(emptySummary.decisions),
+        actionItems: JSON.stringify(emptySummary.actionItems),
+        participants: JSON.stringify(emptySummary.participants),
       });
-      void emit("nexus://meeting-finalized", { meetingId, summary });
-
-      // Index the user's spoken answers into RAG so the system learns their style!
-      const userSpokenText = segments
-        .filter((s) => s.source === "microphone" && s.text.trim().length > 10)
-        .map((s) => s.text.trim())
-        .join("\n\n");
       
-      if (userSpokenText) {
-        const docId = `user_speech_${meetingId}`;
-        const title = `User Spoken Answers (${summary.title || "Untitled"})`;
-        void engine.indexUserSpeech(docId, title, userSpokenText).catch(console.error);
-      }
+      void emit("nexus://meeting-finalized", { meetingId, summary: emptySummary });
     }
     set({ meetingId: null });
   },

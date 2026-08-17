@@ -503,15 +503,54 @@ export class Engine {
   }
 
   async summarizeMeeting(segments: TranscriptSegment[]): Promise<MeetingSummary> {
-    const raw = await this.collect(MEETING_SUMMARY_PROMPT, transcriptWindow(segments, 12000));
-    return parseStructuredJson<MeetingSummary>(raw, {
-      title: "Untitled meeting",
-      summary: "",
-      decisions: [],
-      actionItems: [],
-      openQuestions: [],
-      participants: [],
-    });
+    if (!segments.length) {
+      return {
+        title: "Empty Meeting",
+        summary: "No transcript segments available.",
+        decisions: [],
+        actionItems: [],
+        openQuestions: [],
+        participants: [],
+      };
+    }
+
+    try {
+      const raw = await this.collect(MEETING_SUMMARY_PROMPT, transcriptWindow(segments, 12000));
+      
+      if (!raw || !raw.trim()) {
+        console.warn("[Engine] Empty response from AI for meeting summary");
+        return {
+          title: "Interview Session",
+          summary: `Interview with ${segments.length} transcript segments captured. Empty AI response - check provider status.`,
+          decisions: [],
+          actionItems: [],
+          openQuestions: [],
+          participants: [],
+        };
+      }
+
+      const parsed = parseStructuredJson<MeetingSummary>(raw, {
+        title: "Untitled meeting",
+        summary: "",
+        decisions: [],
+        actionItems: [],
+        openQuestions: [],
+        participants: [],
+      });
+      
+      // Ensure parsed result has required fields
+      return {
+        title: parsed.title || "Untitled meeting",
+        summary: parsed.summary || "No summary generated",
+        decisions: Array.isArray(parsed.decisions) ? parsed.decisions : [],
+        actionItems: Array.isArray(parsed.actionItems) ? parsed.actionItems : [],
+        openQuestions: Array.isArray(parsed.openQuestions) ? parsed.openQuestions : [],
+        participants: Array.isArray(parsed.participants) ? parsed.participants : [],
+      };
+    } catch (err) {
+      console.error("[Engine] Meeting summary generation failed:", err);
+      throw err; // Re-throw so stopListening can handle the fallback
+    }
   }
 
   async followUps(segments: TranscriptSegment[]): Promise<string[]> {
