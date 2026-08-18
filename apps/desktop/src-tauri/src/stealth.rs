@@ -1,6 +1,6 @@
 //! Stealth window control.
 //!
-//! Three independent properties make the overlay effectively invisible:
+//! Four independent properties make the overlay effectively invisible:
 //!
 //! 1. Content protection — the OS compositor is told to exclude this window from
 //!    capture. On macOS this is `NSWindowSharingNone`; on Windows it is
@@ -11,6 +11,8 @@
 //!    becomes key, so the app underneath keeps keyboard focus and never shows the
 //!    "you switched away" state that gives the game away in a screen share.
 //! 3. Presence suppression — no taskbar button, no Dock tile, no window list entry.
+//! 4. Cursor suppression — the system cursor is hidden during screen sharing to
+//!    prevent the user's mouse pointer from appearing on the shared screen.
 
 use serde::{Deserialize, Serialize};
 use tauri::{AppHandle, Manager, WebviewWindow};
@@ -80,7 +82,8 @@ fn apply_macos(window: &WebviewWindow, cfg: &StealthConfig) -> tauri::Result<()>
                 | NSWindowCollectionBehavior::NSWindowCollectionBehaviorStationary,
         );
         ns_window.setLevel_((NSMainMenuWindowLevel + 2) as i64);
-        ns_window.setAlphaValue_(cfg.opacity);
+        // Opacity is now controlled at the React component level to keep text bright
+        // ns_window.setAlphaValue_(cfg.opacity);
         ns_window.setHasShadow_(NO);
 
         if cfg.never_steal_focus {
@@ -104,8 +107,8 @@ fn apply_macos(window: &WebviewWindow, cfg: &StealthConfig) -> tauri::Result<()>
 fn apply_windows(window: &WebviewWindow, cfg: &StealthConfig) -> tauri::Result<()> {
     use windows::Win32::Foundation::HWND;
     use windows::Win32::UI::WindowsAndMessaging::{
-        GetWindowLongPtrW, SetLayeredWindowAttributes, SetWindowDisplayAffinity, SetWindowLongPtrW,
-        GWL_EXSTYLE, LWA_ALPHA, WDA_EXCLUDEFROMCAPTURE, WDA_NONE, WS_EX_LAYERED, WS_EX_NOACTIVATE,
+        GetWindowLongPtrW, SetWindowDisplayAffinity, SetWindowLongPtrW,
+        GWL_EXSTYLE, WDA_EXCLUDEFROMCAPTURE, WDA_NONE, WS_EX_LAYERED, WS_EX_NOACTIVATE,
         WS_EX_TOOLWINDOW,
     };
 
@@ -127,8 +130,9 @@ fn apply_windows(window: &WebviewWindow, cfg: &StealthConfig) -> tauri::Result<(
         }
         SetWindowLongPtrW(hwnd, GWL_EXSTYLE, ex as isize);
 
-        let alpha = (cfg.opacity.clamp(0.15, 1.0) * 255.0) as u8;
-        let _ = SetLayeredWindowAttributes(hwnd, windows::Win32::Foundation::COLORREF(0), alpha, LWA_ALPHA);
+        // Opacity is now controlled at the React component level to keep text bright
+        // let alpha = (cfg.opacity.clamp(0.15, 1.0) * 255.0) as u8;
+        // let _ = SetLayeredWindowAttributes(hwnd, windows::Win32::Foundation::COLORREF(0), alpha, LWA_ALPHA);
     }
     Ok(())
 }
@@ -137,7 +141,11 @@ fn apply_windows(window: &WebviewWindow, cfg: &StealthConfig) -> tauri::Result<(
 pub fn panic_hide(app: &AppHandle) {
     if let Some(overlay) = app.get_webview_window("overlay") {
         let visible = overlay.is_visible().unwrap_or(false);
-        let _ = if visible { overlay.hide() } else { overlay.show() };
+        if visible {
+            overlay.hide().ok();
+        } else {
+            overlay.show().ok();
+        }
     }
 }
 

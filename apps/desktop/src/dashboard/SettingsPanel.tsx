@@ -1,10 +1,10 @@
 import { useState } from "react";
-import { Check, Eye, EyeOff, Zap, Building2, Download } from "lucide-react";
+import { Check, Eye, EyeOff, Zap, Building2, Download, Gauge, Radio } from "lucide-react";
 import { useStore } from "@/lib/store";
 import { bridge } from "@/lib/bridge";
 import { invoke } from "@tauri-apps/api/core";
 import { save } from "@tauri-apps/plugin-dialog";
-import { DEFAULT_MODELS, clearQACache } from "@/lib/engine";
+import { DEFAULT_MODELS, clearQACache, engine } from "@/lib/engine";
 import { cn } from "@/lib/cn";
 import type { ProviderId, RoutingMode } from "@nexus/core";
 
@@ -33,6 +33,7 @@ export function SettingsPanel() {
   const [reveal, setReveal] = useState<Record<string, boolean>>({});
   const [saved, setSaved] = useState<string | null>(null);
   const [modelEdits, setModelEdits] = useState<Record<string, { fast?: string; deep?: string; vision?: string }>>({});
+  const [preflight, setPreflight] = useState<{ loading: boolean; result: string | null }>({ loading: false, result: null });
 
   const saveKey = async (id: ProviderId, keyRef: string) => {
     const value = keys[keyRef];
@@ -65,6 +66,19 @@ export function SettingsPanel() {
     setModelEdits((m) => ({ ...m, [providerId]: {} }));
     setSaved(`models-${providerId}`);
     setTimeout(() => setSaved(null), 1800);
+  };
+
+  const runPreflight = async () => {
+    setPreflight({ loading: true, result: null });
+    try {
+      const results = await engine.preflightProviders();
+      const result = results.length
+        ? results.map(({ id, reachable, latencyMs }) => `${id}: ${reachable ? `${Math.round(latencyMs)}ms` : "unavailable"}`).join(" | ")
+        : "No configured providers";
+      setPreflight({ loading: false, result });
+    } catch {
+      setPreflight({ loading: false, result: "Preflight could not run" });
+    }
   };
 
   return (
@@ -141,6 +155,36 @@ export function SettingsPanel() {
           void saveSettings({ ...settings, routing: { ...settings.routing, firstTokenTimeoutMs } })
         }
       />
+
+      <div className="space-y-3 rounded-lg border border-white/10 bg-white/[0.02] p-3.5">
+        <div className="flex items-start justify-between gap-3">
+          <div>
+            <h3 className="flex items-center gap-1.5 text-[13px] font-medium">
+              <Gauge className="h-3.5 w-3.5 text-accent" /> Live latency mode
+            </h3>
+            <p className="mt-1 text-[12px] leading-relaxed text-white/45">
+              Uses only the primary provider, turns off speculative requests, and limits answers to 180 tokens. This reduces both waiting time and paid usage.
+            </p>
+          </div>
+          <Toggle
+            checked={settings.routing.liveLatencyMode}
+            onChange={(liveLatencyMode) =>
+              void saveSettings({ ...settings, routing: { ...settings.routing, liveLatencyMode } })
+            }
+          />
+        </div>
+        <div className="flex items-center gap-2">
+          <button
+            onClick={() => void runPreflight()}
+            disabled={preflight.loading}
+            className="flex h-8 items-center gap-1.5 rounded-lg border border-white/10 px-3 text-[12px] text-white/65 transition-colors hover:border-accent/40 hover:text-accent disabled:cursor-wait disabled:opacity-60"
+          >
+            <Radio className="h-3.5 w-3.5" />
+            {preflight.loading ? "Checking..." : "Run pre-interview check"}
+          </button>
+          {preflight.result && <span className="text-[11px] text-white/45">{preflight.result}</span>}
+        </div>
+      </div>
 
       {/* ---------------- Appearance ---------------- */}
       <div className="space-y-2 border-t border-white/5 pt-6 mt-6">

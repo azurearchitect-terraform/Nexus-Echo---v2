@@ -11,6 +11,7 @@ const policy: RoutingPolicy = {
   firstTokenTimeoutMs: 50,
   speculativePrefetch: false,
   speculativeWaitMs: 350,
+  liveLatencyMode: false,
   airgapped: false,
 };
 
@@ -62,6 +63,25 @@ function input(signal?: AbortSignal): RouterInput {
 }
 
 describe("HybridRouter hybrid-tier", () => {
+  it("probes registered providers without generating a response", async () => {
+    const router = new HybridRouter();
+    router.register(respondingProvider("gemini", "unused"));
+    router.register({
+      id: "ollama",
+      async *stream() {
+        throw new Error("stream must not be called by a probe");
+      },
+      async ping() {
+        return false;
+      },
+    });
+
+    await expect(router.probe()).resolves.toEqual([
+      expect.objectContaining({ id: "gemini", reachable: true }),
+      expect.objectContaining({ id: "ollama", reachable: false }),
+    ]);
+  });
+
   it("always uses the configured secondary for answers despite latency history", async () => {
     const router = new HybridRouter();
     router.register(respondingProvider("gemini", "gemini answer"));

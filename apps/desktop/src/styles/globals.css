@@ -37,7 +37,8 @@
 
 @layer components {
   .panel {
-    @apply rounded-2xl border border-glass-edge bg-glass backdrop-blur-2xl;
+    @apply rounded-2xl border border-glass-edge backdrop-blur-2xl;
+    /* Background opacity is now controlled dynamically in React to keep text bright */
     box-shadow:
       0 24px 60px -12px rgba(0, 0, 0, 0.7),
       inset 0 1px 0 0 rgba(255, 255, 255, 0.06);
@@ -48,6 +49,11 @@
   }
   .no-drag {
     -webkit-app-region: no-drag;
+  }
+
+  .overlay-cursor-hidden,
+  .overlay-cursor-hidden * {
+    cursor: none !important;
   }
 
   .kbd {

@@ -1,6 +1,6 @@
 {
   "name": "nexus-echo-ai",
-  "version": "2.1.1",
+  "version": "2.1.2",
   "private": true,
   "packageManager": "pnpm@9.12.0",
   "engines": {

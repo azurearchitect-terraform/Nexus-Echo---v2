@@ -1,5 +1,29 @@
 import { describe, expect, it } from "vitest";
-import { isActionableQuestion, analyzeQuestionCompleteness, isIncompleteScenario } from "./util";
+import { isActionableQuestion, analyzeQuestionCompleteness, isIncompleteScenario, isLikelyNonSpeech } from "./util";
+
+describe("isLikelyNonSpeech", () => {
+  it("recognizes common short system-audio noises", () => {
+    expect(isLikelyNonSpeech("[Coughing]")).toBe(true);
+    expect(isLikelyNonSpeech("cough cough cough")).toBe(true);
+    expect(isLikelyNonSpeech("ahem")).toBe(true);
+    expect(isLikelyNonSpeech("hem hem")).toBe(true);
+    expect(isLikelyNonSpeech("Clears his throat")).toBe(true);
+    expect(isLikelyNonSpeech("throat clearing")).toBe(true);
+    expect(isLikelyNonSpeech("(laughter)")).toBe(true);
+    expect(isLikelyNonSpeech("background noise")).toBe(true);
+    expect(isLikelyNonSpeech("sneezing")).toBe(true);
+  });
+
+  it("preserves real questions that mention noise", () => {
+    expect(isLikelyNonSpeech("How do you handle background noise in audio processing?")).toBe(false);
+    expect(isLikelyNonSpeech("Can you explain cough detection algorithms?")).toBe(false);
+  });
+
+  it("blocks noise in every-pause mode", () => {
+    expect(isActionableQuestion("cough cough cough", "every-pause")).toBe(false);
+    expect(isActionableQuestion("clears their throat", "every-pause")).toBe(false);
+  });
+});
 
 describe("isActionableQuestion", () => {
   it("recognizes standard interrogative interview questions", () => {

@@ -250,8 +250,14 @@ pub fn start_stream(
                 Some(false) => {
                     let samples = std::mem::take(&mut *pending.lock());
                     let _ = app_cb.emit("nexus://vad", VadEvent { source, speaking: false, energy });
-                    // Ignore short notification sounds, chimes, and pings (require at least 600ms of audio)
-                    if samples.len() >= (TARGET_SAMPLE_RATE as usize * 6 / 10) {
+                    // System loopback commonly captures coughs, notification sounds,
+                    // and other brief bursts. Require more sustained audio there while
+                    // preserving the existing microphone response time.
+                    let minimum_samples = match source {
+                        Source::System => TARGET_SAMPLE_RATE as usize * 9 / 10,
+                        Source::Microphone => TARGET_SAMPLE_RATE as usize * 6 / 10,
+                    };
+                    if samples.len() >= minimum_samples {
                         let peak = samples.iter().fold(0f32, |a, s| a.max(s.abs()));
                         let utterance = Utterance {
                             source,

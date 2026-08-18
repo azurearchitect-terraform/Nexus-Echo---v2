@@ -138,6 +138,7 @@ let speculativeWaitTimer: ReturnType<typeof setTimeout> | null = null;
 let speculativeAbortController: AbortController | null = null;
 let activeAbortController: AbortController | null = null;
 let lastSuggestSegmentIndex = -1; // Track which segment index was last consumed by suggest()
+const SETTINGS_UPDATED_EVENT = "nexus://settings-updated";
 
 function hexToRgbStr(hex: string): string {
   const cleanHex = hex.replace("#", "");
@@ -205,7 +206,6 @@ export const useStore = create<AppStore>((set, get) => ({
 
     set({
       settings,
-      ready: true,
       latestCompanyIntel: null,
       interviewMode: loadInterviewMode(),
       storyBank: loadStoryBank(),
@@ -238,6 +238,19 @@ export const useStore = create<AppStore>((set, get) => ({
       set({ endInterviewQuestions: event.payload });
     });
 
+    void listen<string>(SETTINGS_UPDATED_EVENT, async (event) => {
+      const currentSettings = get().settings;
+      if (JSON.stringify(currentSettings) === event.payload) return;
+
+      const parsedSettings = AppSettings.safeParse(JSON.parse(event.payload));
+      if (!parsedSettings.success) return;
+
+      await engine.configure(parsedSettings.data);
+      await bridge.applyStealth(parsedSettings.data.stealth);
+      applyThemeColors(parsedSettings.data);
+      set({ settings: parsedSettings.data });
+    });
+
     set({ settings, ready: true, latestCompanyIntel });
   },
 
@@ -247,11 +260,13 @@ export const useStore = create<AppStore>((set, get) => ({
 
   async saveSettings(next) {
     const settings = AppSettings.parse(next);
-    await bridge.saveSettings(JSON.stringify(settings));
+    const serializedSettings = JSON.stringify(settings);
+    await bridge.saveSettings(serializedSettings);
     await engine.configure(settings);
     await bridge.applyStealth(settings.stealth);
     applyThemeColors(settings);
     set({ settings });
+    await emit(SETTINGS_UPDATED_EVENT, serializedSettings);
   },
 
   addAttachment(attachment) {

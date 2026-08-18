@@ -58,6 +58,28 @@ export const NON_QUESTION_PHRASES = new Set([
   "testing", "microphones", "check", "uh", "um", "ah", "hmm"
 ]);
 
+const NON_SPEECH_TOKENS = new Set([
+  "ahem", "beep", "bell", "chime", "cough", "coughing", "ding", "hem", "inaudible", "laugh",
+  "laughing", "laughter", "music", "noise", "ping", "silence", "sneeze",
+  "sneezing", "static",
+]);
+
+export function isLikelyNonSpeech(text: string): boolean {
+  const trimmed = text.trim();
+  if (!trimmed) return true;
+
+  const lower = trimmed.toLowerCase();
+  const normalized = lower.replace(/[^a-z0-9\s]/g, " ").replace(/\s+/g, " ").trim();
+  if (!normalized) return true;
+
+  if (/^(clears?|clearing|cleared) (his |her |their )?throat$/.test(normalized)) return true;
+  if (/^(his |her |their )?throat (clear|clearing)$/.test(normalized)) return true;
+  if (/^(background |indistinct )?(sound|noise|voices?)$/.test(normalized)) return true;
+
+  const words = normalized.split(" ");
+  return words.length <= 4 && words.every((word) => NON_SPEECH_TOKENS.has(word));
+}
+
 export const QUESTION_INDICATORS = [
   // Interrogatives & Auxiliaries
   "what", "why", "how", "when", "where", "who", "which", "whose", "whom",
@@ -87,7 +109,7 @@ export const INCOMPLETE_TRAILING_WORDS = [
 
 export function isActionableQuestion(text: string, mode: "question-detected" | "every-pause" | "manual-only" = "question-detected"): boolean {
   const trimmed = text.trim();
-  if (!trimmed) return false;
+  if (!trimmed || isLikelyNonSpeech(trimmed)) return false;
 
   const lower = trimmed.toLowerCase().replace(/[^a-z0-9\s]/g, " ").trim();
   if (NON_QUESTION_PHRASES.has(lower)) return false;

@@ -58,6 +58,24 @@ export class HybridRouter {
     return this.health.get(id);
   }
 
+  /** Checks configured providers without issuing a generation request. */
+  async probe(timeoutMs = 5_000): Promise<Array<{ id: ProviderId; reachable: boolean; latencyMs: number }>> {
+    return Promise.all(
+      [...this.providers.entries()].map(async ([id, provider]) => {
+        const controller = new AbortController();
+        const timeout = setTimeout(() => controller.abort(), timeoutMs);
+        const started = performance.now();
+        try {
+          return { id, reachable: await provider.ping(controller.signal), latencyMs: performance.now() - started };
+        } catch {
+          return { id, reachable: false, latencyMs: performance.now() - started };
+        } finally {
+          clearTimeout(timeout);
+        }
+      }),
+    );
+  }
+
   private note(id: ProviderId, firstTokenMs: number): void {
     const h = this.health.get(id);
     if (!h) return;

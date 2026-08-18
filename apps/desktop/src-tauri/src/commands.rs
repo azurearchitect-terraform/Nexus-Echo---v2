@@ -112,6 +112,7 @@ pub fn set_click_through(app: AppHandle, payload: bool, state: State<'_, AppStat
         .ok_or_else(|| "overlay window is not available".to_string())?
         .set_ignore_cursor_events(payload)
         .map_err(err)?;
+
     state.overlay_interactive.store(!payload, Ordering::SeqCst);
     Ok(())
 }
@@ -122,6 +123,7 @@ pub fn toggle_resize_mode_inner(app: &AppHandle, state: &AppState) -> CmdResult<
         .ok_or_else(|| "overlay window is not available".to_string())?
         .set_ignore_cursor_events(!interactive)
         .map_err(err)?;
+
     Ok(interactive)
 }
 

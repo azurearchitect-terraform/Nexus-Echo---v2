@@ -1,6 +1,6 @@
 [package]
 name = "nexus-echo"
-version = "2.1.1"
+version = "2.1.2"
 description = "Nexus Echo AI - private, stealth AI meeting assistant"
 authors = ["Nexus Echo"]
 edition = "2021"
@@ -43,7 +43,6 @@ keyring = { version = "3", features = ["apple-native", "windows-native", "sync-s
 
 # Audio capture: microphone and system loopback
 cpal = "0.15"
-rubato = "0.15"
 hound = "3.5"
 
 # Screen capture for vision mode

@@ -45,6 +45,8 @@ export const RoutingPolicy = z.object({
   speculativePrefetch: z.boolean().default(true),
   /** Ms of silence before triggering speculative background generation. */
   speculativeWaitMs: z.number().int().min(50).max(2000).default(350),
+  /** Use one provider and a concise answer limit during a live session. */
+  liveLatencyMode: z.boolean().default(false),
   /** Refuse any network call regardless of provider config. */
   airgapped: z.boolean().default(false),
 });

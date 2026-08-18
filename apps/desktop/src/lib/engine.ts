@@ -299,6 +299,25 @@ export class Engine {
     return merged;
   }
 
+  /** Live mode trades answer length and fan-out for predictable cost and speed. */
+  private livePolicy() {
+    if (!this.settings?.routing.liveLatencyMode) return this.settings!.routing;
+    return {
+      ...this.settings.routing,
+      mode: "single" as const,
+      speculativePrefetch: false,
+    };
+  }
+
+  private liveMaxTokens(): number | undefined {
+    return this.settings?.routing.liveLatencyMode ? 180 : undefined;
+  }
+
+  async preflightProviders(): Promise<Array<{ id: ProviderId; reachable: boolean; latencyMs: number }>> {
+    if (!this.settings) throw new Error("engine is not configured");
+    return this.router.probe();
+  }
+
   private candidateProfile() {
     return {
       targetRole: this.settings?.targetRole || "Senior Azure Architect",
@@ -380,6 +399,7 @@ export class Engine {
       yield { type: "citation", requestId: "pending", docId: hit.docId, title: hit.title, score: hit.score };
     }
 
+    const maxTokens = this.liveMaxTokens();
     let fullAnswer = "";
     for await (const event of this.router.run({
       system: askSystemPrompt(
@@ -391,8 +411,9 @@ export class Engine {
       ),
       messages: [...history, { role: "user", content: prompt }],
       attachments,
-      policy: this.settings.routing,
+      policy: this.livePolicy(),
       models: this.models(),
+      ...(maxTokens ? { maxTokens } : {}),
     })) {
       if (event.type === "token") {
         fullAnswer += event.delta;
@@ -429,6 +450,7 @@ export class Engine {
     const isPersonal = isPersonalQuestion(lastQuestion);
     const hits = (this.settings.ragEnabled && isPersonal) ? await this.retrieve(lastQuestion) : [];
 
+    const maxTokens = this.liveMaxTokens();
     let fullAnswer = "";
     for await (const event of this.router.run({
       system: listenSystemPrompt(
@@ -444,8 +466,9 @@ export class Engine {
           content: `Live transcript:\n${window}\n\nThe user needs to respond now. Give them the words.`,
         },
       ],
-      policy: this.settings.routing,
+      policy: this.livePolicy(),
       models: this.models(),
+      ...(maxTokens ? { maxTokens } : {}),
       ...(signal ? { signal } : {}),
     })) {
       if (event.type === "token") {
