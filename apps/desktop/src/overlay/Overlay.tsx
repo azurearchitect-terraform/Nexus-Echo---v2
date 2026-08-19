@@ -78,6 +78,7 @@ function AnswerPacingTimer() {
 import type { RoutingMode } from "@nexus/core";
 import { useStore } from "@/lib/store";
 import { bridge } from "@/lib/bridge";
+import { DEFAULT_MODELS } from "@/lib/engine";
 import { Markdown } from "@/components/Markdown";
 import { Transcript } from "@/components/Transcript";
 import { cn } from "@/lib/cn";
@@ -231,7 +232,10 @@ export function Overlay() {
   // Also re-fires when audio sources are toggled so a prior failure auto-retries.
   useEffect(() => {
     if (mode === "listen" && !listening && ready) {
-      startListening().catch((err: Error) => {
+      startListening().then(() => {
+        setSttStatus("listening");
+        setSttErrorMessage(null);
+      }).catch((err: Error) => {
         setSttStatus("error");
         const msg = err?.message ?? String(err);
         setSttErrorMessage(
@@ -255,8 +259,11 @@ export function Overlay() {
 
   // ---- Sync STT status with listening state & listen to audio errors ------------
   useEffect(() => {
-    if (sttStatus !== "error" && sttStatus !== "transcribing") {
-      setSttStatus(listening ? "listening" : "idle");
+    if (listening) {
+      setSttStatus("listening");
+      setSttErrorMessage(null);
+    } else if (sttStatus !== "error" && sttStatus !== "transcribing") {
+      setSttStatus("idle");
     }
     if (!listening) {
       setMicLevel(0);
@@ -1044,7 +1051,7 @@ export function Overlay() {
                   {(() => {
                     const activeAnswerList = [
                       ...answersList.filter((a) => a.id !== activeAnswer?.id),
-                      ...(activeAnswer && (activeAnswer.text || activeStreaming) ? [activeAnswer] : []),
+                      ...(activeAnswer && (activeAnswer.text || activeAnswer.error || activeStreaming) ? [activeAnswer] : []),
                     ].reverse();
 
                     if (activeAnswerList.length === 0) return null;
@@ -1063,12 +1070,18 @@ export function Overlay() {
                                 <span>Q: {item.question || "Live Question"}</span>
                               </div>
 
-                              <div className={`leading-relaxed ${isGhost ? 'italic text-white/60' : 'text-white/90'}`}>
-                                <Markdown style={{ fontSize: `${answerFontSize}px` }}>{(isCurrentStreaming || (isTyping && item.id === answer?.id)) ? typedText : (item.text || "…")}</Markdown>
-                                {!isGhost && (isCurrentStreaming || (isTyping && item.id === answer?.id)) && (
-                                  <span className="inline-block h-4 w-[2px] rounded-sm bg-accent align-middle ml-0.5 animate-[typewriterBlink_0.6s_ease-in-out_infinite]" />
-                                )}
-                              </div>
+                              {item.error ? (
+                                <p className="rounded-lg border border-danger/30 bg-danger/10 px-3 py-2 text-[12px] leading-relaxed text-danger">
+                                  {item.error}
+                                </p>
+                              ) : (
+                                <div className={`leading-relaxed ${isGhost ? 'italic text-white/60' : 'text-white/90'}`}>
+                                  <Markdown style={{ fontSize: `${answerFontSize}px` }}>{(isCurrentStreaming || (isTyping && item.id === answer?.id)) ? typedText : (item.text || "…")}</Markdown>
+                                  {!isGhost && (isCurrentStreaming || (isTyping && item.id === answer?.id)) && (
+                                    <span className="inline-block h-4 w-[2px] rounded-sm bg-accent align-middle ml-0.5 animate-[typewriterBlink_0.6s_ease-in-out_infinite]" />
+                                  )}
+                                </div>
+                              )}
 
                               {item.verifiedSpec?.isVerified && (
                                 <div className="mt-2 flex items-center gap-1.5 rounded-md border border-emerald-500/30 bg-emerald-500/10 px-2 py-0.5 text-[10.5px] font-medium text-emerald-400 w-fit">
@@ -1077,12 +1090,13 @@ export function Overlay() {
                                 </div>
                               )}
 
-                              {/* End of Answer Divider Marker */}
-                              <div className="my-3 flex items-center gap-2 text-white/20 select-none">
-                                <div className="h-[1px] flex-1 bg-gradient-to-r from-transparent via-white/15 to-transparent" />
-                                <span className="text-[9px] font-mono uppercase tracking-widest text-white/35">End of Answer</span>
-                                <div className="h-[1px] flex-1 bg-gradient-to-r from-transparent via-white/15 to-transparent" />
-                              </div>
+                              {!item.error && (
+                                <div className="my-3 flex items-center gap-2 text-white/20 select-none">
+                                  <div className="h-[1px] flex-1 bg-gradient-to-r from-transparent via-white/15 to-transparent" />
+                                  <span className="text-[9px] font-mono uppercase tracking-widest text-white/35">End of Answer</span>
+                                  <div className="h-[1px] flex-1 bg-gradient-to-r from-transparent via-white/15 to-transparent" />
+                                </div>
+                              )}
                             </div>
                           );
                         })}
@@ -1192,7 +1206,8 @@ export function Overlay() {
                         const openaiProv = settings.providers.find((p) => p.id === "openai" && p.enabled);
                         const hasGeminiKey = Boolean(geminiProv?.keyRef);
                         const hasOpenAIKey = Boolean(openaiProv?.keyRef);
-                        const sttLabel = hasGeminiKey ? "STT: Gemini 3.6" : hasOpenAIKey ? "STT: Whisper" : "STT: No Key";
+                        const geminiSttModel = geminiProv?.models?.fast ?? DEFAULT_MODELS.gemini.fast;
+                        const sttLabel = hasGeminiKey ? `STT: ${geminiSttModel}` : hasOpenAIKey ? "STT: Whisper" : "STT: No Key";
                         return (
                           <>
                             <span
@@ -1588,18 +1603,41 @@ async function transcribe(wavBase64: string, language: string): Promise<string> 
       errors.push("Gemini API Key missing.");
       return "";
     }
-    const candidateModels = Array.from(
-      new Set([gemini.models?.fast || "gemini-3.5-flash", "gemini-3.6-flash", "gemini-3.5-flash"])
-    );
-    for (const model of candidateModels) {
+    type GeminiModel = { name?: string; supportedGenerationMethods?: string[] };
+    const configuredModel = gemini.models?.fast ?? DEFAULT_MODELS.gemini.fast;
+    try {
+      const modelsResponse = await fetch(
+        "https://generativelanguage.googleapis.com/v1beta/models",
+        { headers: { "x-goog-api-key": apiKey } },
+      );
+      if (!modelsResponse.ok) {
+        const detail = await modelsResponse.text().catch(() => modelsResponse.statusText);
+        throw new Error(`Gemini model discovery failed (${modelsResponse.status}): ${detail.slice(0, 240)}`);
+      }
+      const models = ((await modelsResponse.json()) as { models?: GeminiModel[] }).models ?? [];
+      const availableModels = models
+        .filter((model) => model.supportedGenerationMethods?.includes("generateContent"))
+        .map((model) => model.name?.replace(/^models\//, ""))
+        .filter((model): model is string => Boolean(model));
+      if (!availableModels.length) {
+        throw new Error("Gemini returned no models that support generateContent.");
+      }
+      if (!availableModels.includes(configuredModel)) {
+        throw new Error(`Configured Gemini STT model "${configuredModel}" is unavailable or does not support generateContent. Update it in Settings.`);
+      }
+    } catch (error) {
+      errors.push(error instanceof Error ? error.message : String(error));
+      return "";
+    }
+    for (const model of [configuredModel]) {
       const controller = new AbortController();
       const timeoutId = setTimeout(() => controller.abort(), 12000);
       try {
         const res = await fetch(
-          `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${apiKey}`,
+          `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent`,
           {
             method: "POST",
-            headers: { "Content-Type": "application/json" },
+            headers: { "Content-Type": "application/json", "x-goog-api-key": apiKey },
             body: JSON.stringify({
               contents: [{
                 parts: [
@@ -1702,7 +1740,7 @@ async function transcribe(wavBase64: string, language: string): Promise<string> 
   } else if (sttEngine === "local-whisper") {
     result = await tryLocal();
   } else {
-    result = (await tryGemini()) || (await tryOpenAI()) || (await tryLocal());
+    result = (await tryGemini()) || (await tryOpenAI());
   }
 
   if (!result && errors.length > 0) {

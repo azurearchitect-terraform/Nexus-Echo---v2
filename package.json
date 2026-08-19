@@ -9,6 +9,7 @@
   },
   "scripts": {
     "dev": "pnpm app:dev",
+    "dev:stop": "powershell -NoProfile -ExecutionPolicy Bypass -File ./kill-dev.ps1",
     "dev:web": "pnpm -r --parallel --if-present dev",
     "build": "pnpm -r --if-present build",
     "tauri": "pnpm --filter @nexus/desktop tauri",

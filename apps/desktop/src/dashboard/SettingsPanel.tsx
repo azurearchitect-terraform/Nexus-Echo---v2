@@ -208,11 +208,11 @@ export function SettingsPanel() {
       <div className="space-y-2">
         <h3 className="text-[13px] font-medium">Speech-to-Text engine</h3>
         <p className="text-[12px] text-white/40">
-          Which engine transcribes audio. <strong className="text-white/60">Auto</strong> tries Gemini → OpenAI Whisper → Local in order.
+          Which engine transcribes audio. <strong className="text-white/60">Auto</strong> tries Gemini, then OpenAI Whisper. Local Whisper is used only when selected.
         </p>
         <div className="grid grid-cols-2 gap-2">
           {([
-            { value: "auto", label: "Auto (recommended)", desc: "Gemini → Whisper → Local" },
+            { value: "auto", label: "Auto (recommended)", desc: "Gemini → OpenAI Whisper" },
             { value: "gemini", label: "Gemini Flash", desc: "Fast, multimodal STT via API" },
             { value: "openai-whisper", label: "OpenAI Whisper", desc: "whisper-1 via API" },
             { value: "local-whisper", label: "Local Whisper", desc: "On-device, fully offline" },

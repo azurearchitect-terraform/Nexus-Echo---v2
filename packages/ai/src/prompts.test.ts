@@ -82,4 +82,19 @@ describe("role-aware prompts", () => {
     expect(askSystemPrompt(oversized, [], undefined, undefined, profile)).not.toContain(marker);
     expect(listenSystemPrompt(oversized, [], undefined, undefined, profile)).not.toContain(marker);
   });
+
+  it("requires natural spoken prose without visible answer structure", () => {
+    const prompts = [
+      askSystemPrompt("", [], undefined, undefined, profile),
+      listenSystemPrompt("", [], undefined, undefined, profile),
+    ];
+
+    for (const prompt of prompts) {
+      expect(prompt).toContain("Output only continuous spoken prose");
+      expect(prompt).toContain("Never use headings, topic labels, numbered steps, bullet points, tables");
+      expect(prompt).toContain("Do not expose the answer structure");
+      expect(prompt).not.toContain("Use short scannable sections with ### headings");
+      expect(prompt).not.toContain("2-3 bullets maximum per point");
+    }
+  });
 });

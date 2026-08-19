@@ -36,7 +36,7 @@ import { bridge, type StoredChunk } from "./bridge";
  * Settings; the names here are the sensible defaults, not hard-coded requirements.
  */
 export const DEFAULT_MODELS: Record<ProviderId, { fast: string; deep: string; vision: string }> = {
-  gemini: { fast: "gemini-3.5-flash", deep: "gemini-3.6-flash", vision: "gemini-3.6-flash" },
+  gemini: { fast: "gemini-3.1-flash-lite", deep: "gemini-3.7-flash", vision: "gemini-3.7-flash" },
   openai: { fast: "gpt-4o-mini", deep: "gpt-4o-mini", vision: "gpt-4o" },
   ollama: { fast: "llama3.2:3b", deep: "llama3.1:8b", vision: "llama3.2-vision:11b" },
   "azure-openai": { fast: "gpt-4o-mini", deep: "gpt-4o-mini", vision: "gpt-4o" },
@@ -118,6 +118,7 @@ export function findCachedQA(question: string, minSimilarity = 0.82): QACacheEnt
   let highestScore = 0;
 
   for (const item of cache) {
+    if (!isCacheableAnswer(item.answer)) continue;
     const score = calculateTextSimilarity(question, item.question);
     if (score >= minSimilarity && score > highestScore) {
       highestScore = score;
@@ -125,6 +126,10 @@ export function findCachedQA(question: string, minSimilarity = 0.82): QACacheEnt
     }
   }
   return bestMatch;
+}
+
+function isCacheableAnswer(answer: string): boolean {
+  return answer.trim().split(/\s+/).filter(Boolean).length >= 12;
 }
 
 export class Engine {
@@ -421,7 +426,7 @@ export class Engine {
       yield event;
     }
 
-    if (fullAnswer.trim()) {
+    if (isCacheableAnswer(fullAnswer)) {
       saveToQACache({ question: cacheKey, answer: fullAnswer.trim(), persona: detectPersona(prompt) });
     }
   }
@@ -430,12 +435,14 @@ export class Engine {
   async *suggest(segments: TranscriptSegment[], signal?: AbortSignal): AsyncGenerator<StreamEvent> {
     if (!this.settings) throw new Error("engine is not configured");
     const window = segments.length ? transcriptWindow(segments) : "The user is in a live conversation and needs a quick, direct, and relevant response.";
-    // Prefer the last system-audio segment as the canonical question; fall back to the
-    // last mic segment (mic-only / solo testing mode) then the full transcript window.
-    const lastQuestion =
-      [...segments].reverse().find((s) => s.source === "system")?.text ??
-      [...segments].reverse().find((s) => s.source === "microphone")?.text ??
-      window;
+    // VAD can split one Teams question into several finalized chunks. Use the
+    // complete source turn for cache lookup, retrieval, and persona detection.
+    const questionSource = segments.some((segment) => segment.source === "system") ? "system" : "microphone";
+    const lastQuestion = segments
+      .filter((segment) => segment.source === questionSource)
+      .map((segment) => segment.text.trim())
+      .filter(Boolean)
+      .join(" ") || window;
 
     // 1. Check QA Cache for instant lookup (0 API Cost)
     const cacheKey = this.candidateCacheKey(lastQuestion);
@@ -477,7 +484,7 @@ export class Engine {
       yield event;
     }
 
-    if (fullAnswer.trim()) {
+    if (isCacheableAnswer(fullAnswer)) {
       saveToQACache({ question: cacheKey, answer: fullAnswer.trim(), persona: detectPersona(lastQuestion) });
     }
   }

@@ -46,6 +46,20 @@ function respondingProvider(id: Provider["id"], response: string, fail = false):
   };
 }
 
+function chunkedProvider(id: Provider["id"], chunks: string[], models: string[]): Provider {
+  return {
+    id,
+    async *stream(options) {
+      models.push(options.model);
+      for (const chunk of chunks) yield { delta: chunk, done: false };
+      yield { delta: "", done: true };
+    },
+    async ping() {
+      return true;
+    },
+  };
+}
+
 function input(signal?: AbortSignal): RouterInput {
   return {
     system: "system",
@@ -94,6 +108,21 @@ describe("HybridRouter hybrid-tier", () => {
       expect(events).toContainEqual(expect.objectContaining({ type: "token", delta: "openai answer" }));
       expect(events).not.toContainEqual(expect.objectContaining({ type: "token", delta: "gemini answer" }));
     }
+  });
+
+  it("uses the answer provider fast model and preserves every streamed chunk", async () => {
+    const router = new HybridRouter();
+    const models: string[] = [];
+    router.register(respondingProvider("gemini", "fallback"));
+    router.register(chunkedProvider("openai", ["first ", "second ", "third"], models));
+    const events = [];
+
+    for await (const event of router.run(input())) events.push(event);
+
+    expect(models).toEqual(["fast"]);
+    expect(events.filter((event) => event.type === "token").map((event) => event.delta).join(""))
+      .toBe("first second third");
+    expect(events.at(-1)).toEqual(expect.objectContaining({ type: "done" }));
   });
 
   it("falls back to the configured primary when the secondary fails", async () => {

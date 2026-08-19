@@ -401,11 +401,24 @@ export const useStore = create<AppStore>((set, get) => ({
     const { settings } = get();
     const meetingId = uid("meet");
 
+    if (smartWaitTimer) clearTimeout(smartWaitTimer);
+    if (speculativeWaitTimer) clearTimeout(speculativeWaitTimer);
+    if (suggestDebounceTimer) clearTimeout(suggestDebounceTimer);
+    activeAbortController?.abort();
+    speculativeAbortController?.abort();
+    smartWaitTimer = null;
+    speculativeWaitTimer = null;
+    suggestDebounceTimer = null;
+    activeAbortController = null;
+    speculativeAbortController = null;
+    lastSuggestSegmentIndex = -1;
+
     let silenceMs = settings.audio.vadSilenceMs;
     const pacing = settings.audio.speakerPacing ?? "normal";
-    if (pacing === "fast") silenceMs = 350;
-    else if (pacing === "slow") silenceMs = 1500;
-    else if (pacing === "auto") silenceMs = 800; // Auto starts at 800ms and adapts
+    if (pacing === "fast") silenceMs = 650;
+    else if (pacing === "slow") silenceMs = 1800;
+    else if (pacing === "auto") silenceMs = 1200;
+    else silenceMs = Math.max(silenceMs, 1100);
 
     await bridge.startListening({
       meetingId,
@@ -416,7 +429,21 @@ export const useStore = create<AppStore>((set, get) => ({
       vadThreshold: settings.audio.vadThreshold,
       vadSilenceMs: silenceMs,
     });
-    set({ listening: true, meetingId, segments: [], mode: "listen", followUps: [] });
+    set({
+      listening: true,
+      meetingId,
+      segments: [],
+      mode: "listen",
+      followUps: [],
+      answer: null,
+      questionBuffer: [],
+      streaming: false,
+      isSmartWaiting: false,
+      smartWaitConfidence: null,
+      isSpeculating: false,
+      speculativeAnswer: null,
+      isSpeculationComplete: false,
+    });
   },
 
   async stopListening() {
@@ -542,20 +569,26 @@ export const useStore = create<AppStore>((set, get) => ({
       let silenceMs = settings.audio.vadSilenceMs;
       // Use the actual target pacing (e.g. slow) if we are dynamically overriding in auto mode
       const activePacing = isAutoOverride ? pacing : targetPacing;
-      if (activePacing === "fast") silenceMs = 350;
-      else if (activePacing === "slow") silenceMs = 1500;
-      else if (activePacing === "auto") silenceMs = 800;
+      if (activePacing === "fast") silenceMs = 650;
+      else if (activePacing === "slow") silenceMs = 1800;
+      else if (activePacing === "auto") silenceMs = 1200;
+      else silenceMs = Math.max(silenceMs, 1100);
 
-      await bridge.startListening({
-        meetingId,
-        captureMicrophone: settings.audio.captureMicrophone,
-        captureSystemAudio: settings.audio.captureSystemAudio,
-        ...(settings.audio.micDeviceId ? { micDeviceId: settings.audio.micDeviceId } : {}),
-        ...(settings.audio.systemDeviceId ? { systemDeviceId: settings.audio.systemDeviceId } : {}),
-        vadThreshold: settings.audio.vadThreshold,
-        vadSilenceMs: silenceMs,
-      });
-      console.log(`[Pacing] Swapped VAD silence threshold dynamically to: ${silenceMs}ms (${activePacing})`);
+      try {
+        await bridge.startListening({
+          meetingId,
+          captureMicrophone: settings.audio.captureMicrophone,
+          captureSystemAudio: settings.audio.captureSystemAudio,
+          ...(settings.audio.micDeviceId ? { micDeviceId: settings.audio.micDeviceId } : {}),
+          ...(settings.audio.systemDeviceId ? { systemDeviceId: settings.audio.systemDeviceId } : {}),
+          vadThreshold: settings.audio.vadThreshold,
+          vadSilenceMs: silenceMs,
+        });
+        console.log(`[Pacing] Swapped VAD silence threshold dynamically to: ${silenceMs}ms (${activePacing})`);
+      } catch (e) {
+        console.error("[Pacing] Failed to restart audio after pacing change:", e);
+        set({ listening: false });
+      }
     }
   },
 
@@ -596,8 +629,8 @@ export const useStore = create<AppStore>((set, get) => ({
           smartWaitTimer = null;
           set({ isSmartWaiting: false, smartWaitConfidence: null });
           console.log("[SmartWait] Candidate started speaking. Triggering suggested answer immediately!");
-          lastSuggestSegmentIndex = get().segments.length - 1;
           void get().suggest();
+          lastSuggestSegmentIndex = get().segments.length - 1;
         }
         return; // In dual mode, candidate speaking does not start a new interviewer question countdown
       }
@@ -616,6 +649,15 @@ export const useStore = create<AppStore>((set, get) => ({
           // Short filler while already waiting — just append the segment, don't reset the timer
           console.log(`[SmartWait] Short filler segment ignored (${segWords.length} words): "${segment.text.trim()}"`);
           return;
+        }
+
+        // A later transcript chunk means the interviewer continued speaking. Stop
+        // any answer generated from the incomplete chunk instead of queueing a
+        // second answer and leaving stale text on screen.
+        if (get().streaming && activeAbortController) {
+          activeAbortController.abort();
+          activeAbortController = null;
+          set({ streaming: false, answer: null, questionBuffer: [] });
         }
 
         // Cancel active smart wait — speaker is speaking a substantial new segment
@@ -704,8 +746,10 @@ export const useStore = create<AppStore>((set, get) => ({
           waitMs = Math.round(1600 * pacingMultiplier);
         }
 
-        // Hard cap: never wait more than 2.2 seconds regardless of pacing
-        waitMs = Math.min(waitMs, 2200);
+        // Give conferencing audio enough time to deliver another chunk. A very
+        // short completion timer answers natural mid-question pauses in Teams.
+        const minimumWaitMs = pacing === "fast" ? 500 : pacing === "normal" ? 900 : 1200;
+        waitMs = Math.min(Math.max(waitMs, minimumWaitMs), 2200);
 
         console.log(
           `[SmartWait] Completeness: ${(completeness * 100).toFixed(0)}% | ` +
@@ -730,9 +774,10 @@ export const useStore = create<AppStore>((set, get) => ({
         smartWaitTimer = setTimeout(() => {
           smartWaitTimer = null;
           set({ isSmartWaiting: false, smartWaitConfidence: null });
-          // Mark which segment index was consumed so the next question doesn't merge
-          lastSuggestSegmentIndex = get().segments.length - 1;
+          // suggest() snapshots the fresh segments synchronously. Mark them consumed
+          // only afterward so the complete question reaches the answer engine.
           void get().suggest();
+          lastSuggestSegmentIndex = get().segments.length - 1;
         }, waitMs);
       }
     }
@@ -882,9 +927,11 @@ export const useStore = create<AppStore>((set, get) => ({
   },
 
   async suggest(isSpeculative = false) {
-    const segments = get().segments;
-    const recent = segments.slice(-3);
-    const lastQuestion = recent.map((s) => s.text.trim()).filter(Boolean).join(" ") || "Live Question";
+    const allSegments = get().segments;
+    const segments = lastSuggestSegmentIndex >= 0
+      ? allSegments.slice(lastSuggestSegmentIndex + 1)
+      : allSegments.slice(-5);
+    const lastQuestion = segments.map((s) => s.text.trim()).filter(Boolean).join(" ") || "Live Question";
 
     if (!isSpeculative) {
       if (get().isSpeculating) {
@@ -928,13 +975,9 @@ export const useStore = create<AppStore>((set, get) => ({
     const persona = get().manualPersona || (lastQuestion ? detectPersona(lastQuestion) : (get().detectedPersona ?? undefined));
     if (persona) set({ detectedPersona: persona });
 
-    const answersList = get().answersList;
-    const lastAns = answersList[answersList.length - 1];
-    
-    let answerId = uid("ans");
-    if (lastAns && Date.now() - lastAns.createdAt < 15000) {
-      answerId = lastAns.id;
-    }
+    // Each suggestion must own its record. Reusing a recent ID let a new
+    // auto-trigger overwrite a still-recent answer with its partial stream.
+    const answerId = uid("ans");
 
     let abortController: AbortController | undefined;
 

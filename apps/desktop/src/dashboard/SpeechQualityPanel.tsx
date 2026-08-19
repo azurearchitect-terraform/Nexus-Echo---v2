@@ -2,10 +2,34 @@ import { useStore } from "@/lib/store";
 import { Zap, Mic, Volume2, Lightbulb } from "lucide-react";
 
 export function SpeechQualityPanel() {
-  const { speechMetrics, speechFeedback } = useStore();
+  const { speechMetrics, speechFeedback, settings } = useStore();
 
   if (!speechMetrics) {
-    return null;
+    return (
+      <section className="space-y-6">
+        <header>
+          <div className="flex items-center gap-2">
+            <Mic className="h-5 w-5 text-accent" />
+            <h2 className="text-lg font-semibold">Speech Quality Analytics</h2>
+          </div>
+          <p className="mt-0.5 text-[13px] text-white/40">
+            Local analysis of your speaking pace, pauses, fillers, and delivery patterns.
+          </p>
+        </header>
+
+        <div className="rounded-xl border border-white/10 bg-white/[0.02] p-5">
+          <h3 className="text-[13px] font-medium">No speech analysis yet</h3>
+          <p className="mt-1 text-[12px] leading-relaxed text-white/50">
+            Start and stop a Listen session after speaking through your microphone. Analytics are calculated locally when the session ends.
+          </p>
+          {!settings.audio.captureMicrophone && (
+            <p className="mt-3 rounded-lg border border-warn/25 bg-warn/[0.07] px-3 py-2 text-[12px] text-warn">
+              Microphone capture is off. Enable it in the overlay audio settings before starting a session.
+            </p>
+          )}
+        </div>
+      </section>
+    );
   }
 
   // Determine quality tier based on overall score

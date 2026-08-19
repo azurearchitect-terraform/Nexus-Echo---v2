@@ -1,15 +1,36 @@
-# Nexus Echo Dev Kill Script
-# Run this whenever the dev server gets stuck or before restarting
-Write-Host 'Killing all Nexus Echo dev processes...'
+# Nexus Echo development process cleanup for Windows.
+$ErrorActionPreference = 'SilentlyContinue'
+$repoPath = [Regex]::Escape((Resolve-Path $PSScriptRoot).Path)
+$processNames = @('node.exe', 'cargo.exe', 'rustc.exe', 'nexus-echo.exe')
 
-Stop-Process -Name 'nexus-echo' -Force -ErrorAction SilentlyContinue
-Stop-Process -Name 'cargo'      -Force -ErrorAction SilentlyContinue
+Write-Host 'Stopping Nexus Echo development processes...'
 
-Start-Sleep -Milliseconds 500
+$processIds = Get-CimInstance Win32_Process |
+    Where-Object {
+        $_.Name -in $processNames -and (
+            $_.Name -eq 'nexus-echo.exe' -or
+            ($_.CommandLine -and (
+                $_.CommandLine -match $repoPath -or
+                $_.CommandLine -match '@nexus/desktop.+tauri dev'
+            ))
+        )
+    } |
+    Select-Object -ExpandProperty ProcessId -Unique
 
-$remaining = Get-Process -Name 'nexus-echo','cargo' -ErrorAction SilentlyContinue
+$listenerIds = Get-NetTCPConnection -LocalPort 1420 -State Listen |
+    Select-Object -ExpandProperty OwningProcess -Unique
+
+@($processIds) + @($listenerIds) |
+    Where-Object { $_ } |
+    Sort-Object -Unique |
+    ForEach-Object {
+        & taskkill.exe /PID $_ /T /F 2>$null | Out-Null
+    }
+
+$remaining = Get-NetTCPConnection -LocalPort 1420 -State Listen
 if ($remaining) {
-    Write-Host 'Some processes still running'
-} else {
-    Write-Host 'All clear! You can now run: npm run tauri dev'
+    Write-Error 'Port 1420 is still in use. Close the owning process and retry.'
+    exit 1
 }
+
+Write-Host 'Development processes stopped. You can now run: pnpm dev'

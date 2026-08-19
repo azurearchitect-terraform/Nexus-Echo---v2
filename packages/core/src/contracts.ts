@@ -11,7 +11,7 @@ export type ProviderId = z.infer<typeof ProviderId>;
 
 /**
  * hybrid-race  -> fire Gemini and OpenAI at once, stream whichever first token wins.
- * hybrid-tier  -> fast model answers instantly, deep model silently refines and replaces.
+ * hybrid-tier  -> configured answer provider streams once; primary is a sequential fallback.
  * single       -> exactly one provider, no fan-out. Chosen from `primary`.
  * offline      -> Ollama only, no network egress at all.
  */
@@ -81,7 +81,7 @@ export const AudioConfig = z.object({
   /** Energy threshold below which a frame counts as silence. */
   vadThreshold: z.number().min(0).max(1).default(0.01),
   /** Silence duration that closes an utterance. */
-  vadSilenceMs: z.number().int().default(500),
+  vadSilenceMs: z.number().int().default(1100),
   diarize: z.boolean().default(true),
   language: z.string().default("auto"),
   /** Which STT engine to use: auto = try gemini then openai then local */

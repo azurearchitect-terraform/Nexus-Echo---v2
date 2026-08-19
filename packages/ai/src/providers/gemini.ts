@@ -7,6 +7,38 @@ import { readSSE } from "../sse";
  */
 export function createGeminiProvider(creds: ProviderCredentials): Provider {
   const base = (creds.baseUrl ?? "https://generativelanguage.googleapis.com/v1beta").replace(/\/+$/, "");
+  let availableModels: Promise<string[]> | null = null;
+  const authHeaders = (): Record<string, string> => ({ "x-goog-api-key": creds.apiKey ?? "" });
+
+  const resolveModel = async (requestedModel: string, signal: AbortSignal): Promise<string> => {
+    if (!availableModels) {
+      availableModels = fetch(`${base}/models`, { headers: authHeaders(), signal })
+        .then(async (response) => {
+          if (!response.ok) {
+            const detail = await response.text().catch(() => response.statusText);
+            throw new Error(`Gemini model discovery failed (${response.status}): ${detail.slice(0, 240)}`);
+          }
+          const payload = (await response.json()) as {
+            models?: Array<{ name?: string; supportedGenerationMethods?: string[] }>;
+          };
+          return (payload.models ?? [])
+            .filter((model) => model.supportedGenerationMethods?.includes("generateContent"))
+            .map((model) => model.name?.replace(/^models\//, ""))
+            .filter((model): model is string => Boolean(model));
+        });
+    }
+
+    let models: string[];
+    try {
+      models = await availableModels;
+    } catch (error) {
+      availableModels = null;
+      throw error;
+    }
+    if (!models.length) throw new Error("Gemini returned no models that support generateContent.");
+    if (models.includes(requestedModel)) return requestedModel;
+    throw new Error(`Configured Gemini model "${requestedModel}" is unavailable or does not support generateContent. Update it in Settings.`);
+  };
 
   return {
     id: "gemini",
@@ -33,10 +65,11 @@ export function createGeminiProvider(creds: ProviderCredentials): Provider {
         { role: "user", parts },
       ];
 
-      const url = `${base}/models/${o.model}:streamGenerateContent?alt=sse&key=${creds.apiKey ?? ""}`;
+      const model = await resolveModel(o.model, o.signal);
+      const url = `${base}/models/${model}:streamGenerateContent?alt=sse`;
       const res = await fetch(url, {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: { "Content-Type": "application/json", ...authHeaders() },
         signal: o.signal,
         body: JSON.stringify({
           contents,
@@ -88,10 +121,10 @@ export function createGeminiProvider(creds: ProviderCredentials): Provider {
     },
 
     async embed(texts, model) {
-      const url = `${base}/models/${model}:batchEmbedContents?key=${creds.apiKey ?? ""}`;
+      const url = `${base}/models/${model}:batchEmbedContents`;
       const res = await fetch(url, {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: { "Content-Type": "application/json", ...authHeaders() },
         body: JSON.stringify({
           requests: texts.map((t) => ({ model: `models/${model}`, content: { parts: [{ text: t }] } })),
         }),
@@ -107,7 +140,7 @@ export function createGeminiProvider(creds: ProviderCredentials): Provider {
 
     async ping(signal) {
       try {
-        const res = await fetch(`${base}/models?key=${creds.apiKey ?? ""}`, { signal });
+        const res = await fetch(`${base}/models`, { headers: authHeaders(), signal });
         return res.ok;
       } catch {
         return false;

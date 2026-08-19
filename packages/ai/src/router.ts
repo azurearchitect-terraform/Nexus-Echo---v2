@@ -31,9 +31,8 @@ interface Health {
  * aborted immediately so we never pay for two full completions — only for the few
  * tokens the loser produced before cancellation.
  *
- * hybrid-tier: the fast model answers immediately so the user has something to say
- * within ~300ms, while the deep model works in the background. If the deep answer
- * lands before the user has moved on, the UI swaps it in with a `swap` event.
+ * hybrid-tier: the configured answer provider streams once, with the primary used
+ * as a sequential fallback only when the answer provider fails before completion.
  *
  * A rolling latency EWMA per provider decides who gets to start first on the next
  * turn, so the router adapts to whichever API is fast on this network today.
@@ -152,14 +151,14 @@ export class HybridRouter {
       (a) => a.kind === "image" || a.kind === "screenshot",
     );
     const fallbackModels: Record<ProviderId, { fast: string; deep: string; vision: string }> = {
-      gemini: { fast: "gemini-3.5-flash", deep: "gemini-3.6-flash", vision: "gemini-3.6-flash" },
+      gemini: { fast: "gemini-3.1-flash-lite", deep: "gemini-3.7-flash", vision: "gemini-3.7-flash" },
       openai: { fast: "gpt-4o-mini", deep: "gpt-4o-mini", vision: "gpt-4o" },
       ollama: { fast: "llama3.2:3b", deep: "llama3.1:8b", vision: "llama3.2-vision:11b" },
       "azure-openai": { fast: "gpt-4o-mini", deep: "gpt-4o-mini", vision: "gpt-4o" },
       custom: { fast: "default", deep: "default", vision: "default" },
     };
     const set = input.models?.[id] ?? fallbackModels[id] ?? fallbackModels.gemini;
-    const model = (hasImage ? set.vision : role === "deep" ? set.deep : set.fast) || fallbackModels[id]?.fast || "gemini-1.5-flash";
+    const model = (hasImage ? set.vision : role === "deep" ? set.deep : set.fast) || fallbackModels[id]?.fast || "gemini-3.1-flash-lite";
     return {
       system: input.system,
       messages: input.messages,
@@ -288,7 +287,7 @@ export class HybridRouter {
     }
   }
 
-  /** Use the configured secondary as the answer model, with primary as a safe fallback. */
+  /** Use the configured secondary as the answer provider, with primary as a safe fallback. */
   private async *runTiered(
     requestId: string,
     started: number,
@@ -309,7 +308,10 @@ export class HybridRouter {
       const ctl = new AbortController();
       const abortFromCaller = () => ctl.abort();
       input.signal?.addEventListener("abort", abortFromCaller, { once: true });
-      const opts = this.buildOptions(targetId, input, "deep", ctl.signal);
+      // Tier mode separates transcription from answer generation; it does not
+      // imply a different model role. Using `deep` here made this mode alone pick
+      // stale or unsupported model overrides while every other mode used `fast`.
+      const opts = this.buildOptions(targetId, input, "fast", ctl.signal);
       let firstTokenMs = 0;
       let timedOut = false;
       const timeout = setTimeout(() => {
